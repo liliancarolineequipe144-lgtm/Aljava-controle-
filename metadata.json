@@ -1,0 +1,7 @@
+{
+  "name": "Aljava Controle",
+  "description": "Sistema completo de controle e check-in para ministério infantil, com gestão de faixas etárias (G1 a G4), materiais e voluntários.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

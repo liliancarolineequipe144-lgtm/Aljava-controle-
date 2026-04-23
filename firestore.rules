@@ -1,0 +1,145 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.firebase.sign_in_provider == 'anonymous' ||
+        (request.auth.token.get('email', '') != null && request.auth.token.get('email', '').lower() == 'convitebrancadeneve@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // --- Validation Blueprints ---
+
+    function isValidChild(data) {
+      return data.keys().hasAll(['name', 'birthDate']) &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             data.birthDate is string && data.birthDate.size() >= 10 && data.birthDate.size() <= 20 &&
+             (data.get('status', 'Ativa') in ['Ativa', 'Inativa', 'Visitante']) &&
+             (!('checkedIn' in data) || data.checkedIn is bool) &&
+             (!('parentIds' in data) || data.parentIds is list);
+    }
+
+    function isValidParent(data) {
+      return data.keys().hasAll(['name', 'phone', 'leader']) &&
+             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
+             data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20 &&
+             data.leader is string;
+    }
+
+    function isValidMaterial(data) {
+      return data.keys().hasAll(['name', 'quantity', 'category']) &&
+             data.name is string && data.quantity is number && data.quantity >= 0 &&
+             data.category is string;
+    }
+
+    function isValidVolunteer(data) {
+      return data.keys().hasAll(['name', 'phone', 'role']) &&
+             data.name is string && data.phone is string && data.role is string;
+    }
+
+    function isValidSchedule(data) {
+      return data.keys().hasAll(['date', 'volunteerId', 'groupId', 'shift']) &&
+             data.date is string && data.volunteerId is string &&
+             data.groupId in ['G1', 'G2', 'G3', 'G4'] &&
+             data.shift in ['Manhã', 'Noite'];
+    }
+
+    function isValidService(data) {
+      return data.keys().hasAll(['name', 'date', 'type']) &&
+             data.name is string && data.date is string &&
+             data.type in ['Culto', 'Rede', 'Evento'];
+    }
+
+    function isValidSetting(data) {
+      return (!('appName' in data) || (data.appName is string && data.appName.size() <= 50)) &&
+             (!('logoUrl' in data) || (data.logoUrl is string && data.logoUrl.size() <= 500));
+    }
+
+    // --- Collection Rules ---
+
+    match /children/{childId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(childId) && isValidChild(incoming());
+      allow update: if (isAdmin() || (isSignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['checkedIn', 'lastCheckIn', 'lastCheckOut']))) 
+                    && isValidChild(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /parents/{parentId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(parentId) && isValidParent(incoming());
+      allow update: if isAdmin() && isValidParent(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /materials/{materialId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(materialId) && isValidMaterial(incoming());
+      allow update: if isAdmin() && isValidMaterial(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /volunteers/{volunteerId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(volunteerId) && isValidVolunteer(incoming());
+      allow update: if isAdmin() && isValidVolunteer(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /schedules/{scheduleId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(scheduleId) && isValidSchedule(incoming());
+      allow update: if isAdmin() && isValidSchedule(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /services/{serviceId} {
+      allow read: if isSignedIn();
+      allow create: if isAdmin() && isValidId(serviceId) && isValidService(incoming());
+      allow update: if isAdmin() && isValidService(incoming());
+      allow delete: if isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true; // Public read for logo/name
+      allow write: if isAdmin() && isValidSetting(incoming());
+    }
+
+    match /test/{docId} {
+      allow get: if isSignedIn();
+      allow write: if isAdmin();
+    }
+    
+    match /admins/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if false; // Only manageable via console or functions
+    }
+  }
+}
