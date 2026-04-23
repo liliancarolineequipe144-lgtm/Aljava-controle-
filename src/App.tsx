@@ -187,6 +187,7 @@ export default function App() {
   const [selectedChildForQr, setSelectedChildForQr] = useState<Child | null>(null);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [launchTextInput, setLaunchTextInput] = useState('');
 
   const handleImportSeedData = async () => {
     if (!isAdmin) return;
@@ -259,128 +260,80 @@ export default function App() {
     }
   };
 
-  const handleSpreadsheetImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!isAdmin) {
-      toast.error('Apenas administradores podem importar planilhas.');
-      return;
-    }
-
-    const t = toast.loading('Processando planilha...');
+  const handleSmartLaunch = async () => {
+    if (!isAdmin || !launchTextInput.trim()) return;
+    
     setIsImporting(true);
-
-    const normalizePhone = (phone: any) => {
-      if (!phone) return '';
-      let cleaned = String(phone).replace(/\D/g, '');
-      if (cleaned.startsWith('55') && cleaned.length >= 12) {
-        cleaned = cleaned.substring(2);
-      }
-      return cleaned;
-    };
-
+    const t = toast.loading('IA processando seu lançamento...');
+    
     try {
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data, { type: 'array', cellDates: true });
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData: any[] = XLSX.utils.sheet_to_json(worksheet);
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      
+      const prompt = `Você é um assistente do Ministério Infantil Aljava. Sua tarefa é extrair informações de crianças e responsáveis do texto fornecido.
+      
+      TEXTO PARA PROCESSAR:
+      "${launchTextInput}"
+      
+      REGRAS:
+      1. Extraia o nome da criança, data de nascimento (formato YYYY-MM-DD), e se houver, alergias ou observações.
+      2. Extraia o nome do responsável, telefone (apenas números), líder/rede e parentesco.
+      3. Se várias crianças pertencerem à mesma família/responsável, agrupe-as no mesmo objeto de família.
+      4. Retorne APENAS um JSON válido no seguinte formato:
+      {
+        "families": [
+          {
+            "parents": [{ "name": "...", "phone": "...", "leader": "...", "relation": "..." }],
+            "children": [{ "name": "...", "birthDate": "YYYY-MM-DD", "allergies": "...", "specialNeeds": "..." }]
+          }
+        ]
+      }
+      
+      IMPORTANTE: Se não encontrar a data de nascimento, tente inferir pela idade se mencionada. Se não houver pista, use a data atual. O telefone deve conter apenas números.`;
 
-      console.log('Dados brutos da planilha:', jsonData);
-
-      if (jsonData.length === 0) {
-        toast.error('A planilha está vazia.', { id: t });
-        return;
+      const response = await ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents: prompt
+      });
+      
+      const responseText = response.text || '';
+      const jsonStr = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+      const data = JSON.parse(jsonStr);
+      
+      if (!data.families || !Array.isArray(data.families)) {
+        throw new Error('Formato de resposta inválido');
       }
 
-      // Helper to find column by multiple names
-      const findValue = (row: any, aliases: string[]) => {
-        const item = Object.entries(row).find(([key]) => {
-          const normalizedKey = key.toLowerCase().replace(/\s/g, '');
-          return aliases.some(alias => normalizedKey.includes(alias.toLowerCase().replace(/\s/g, '')));
-        });
-        return item ? item[1] : undefined;
-      };
+      let kidsCount = 0;
+      let parentsCount = 0;
 
-      const phoneToFamily: { [phone: string]: { familyId: string, parentIds: string[] } } = {};
-      let countChildren = 0;
-      let countParents = 0;
-      let skippedCount = 0;
-
-      // FIRST PASS: Identify Guardians (Responsáveis)
-      for (const row of jsonData) {
-        const name = findValue(row, ['nome', 'Nome']);
-        const typeRaw = findValue(row, ['Tipo', 'Status', 'Situação']);
-        const type = String(typeRaw || '').toLowerCase();
-        const phone = findValue(row, ['Telefone', 'WhatsApp', 'Celular', 'Phone', 'Zap']);
-        const normPhone = normalizePhone(phone);
-
-        const isGuardian = type.includes('respons') || type.includes('pai') || type.includes('mãe');
-
-        if (isGuardian && name && normPhone) {
-          if (!phoneToFamily[normPhone]) {
-            phoneToFamily[normPhone] = { 
-              familyId: `family_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`, 
-              parentIds: [] 
-            };
-          }
-
+      for (const family of data.families) {
+        const familyId = `family_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const parentIds: string[] = [];
+        
+        for (const p of (family.parents || [])) {
           const parentRef = doc(collection(db, 'parents'));
           await setDoc(parentRef, {
-            name: String(name),
-            phone: String(phone || ''),
-            relation: 'Responsável',
-            leader: findValue(row, ['Líder', 'Rede', 'Network', 'Lider']) || '-',
-            role: findValue(row, ['Cargo', 'Role', 'Função']) || '',
-            familyId: phoneToFamily[normPhone].familyId,
+            name: p.name || 'Responsável',
+            phone: p.phone || '',
+            leader: p.leader || '-',
+            relation: p.relation || 'Pai/Mãe',
+            familyId,
             id: parentRef.id,
-            photoUrl: ''
+            photoUrl: '',
+            role: ''
           });
-          phoneToFamily[normPhone].parentIds.push(parentRef.id);
-          countParents++;
+          parentIds.push(parentRef.id);
+          parentsCount++;
         }
-      }
-
-      // SECOND PASS: Identify Children (Crianças)
-      for (const row of jsonData) {
-        const childName = findValue(row, ['nome', 'Nome da Criança', 'Criança', 'Child']);
-        const typeRaw = findValue(row, ['Tipo', 'Status', 'Situação']);
-        const type = String(typeRaw || '').toLowerCase();
-        let birthDate = findValue(row, ['Data de nascimento', 'Nascimento', 'BirthDate', 'Nasc']);
-        const parentPhone = findValue(row, ['Telefone', 'WhatsApp', 'Celular', 'Phone', 'Zap']);
-        const normPhone = normalizePhone(parentPhone);
-
-        const isChild = type.includes('criança') || type.includes('filh') || (!type && birthDate);
-
-        if (isChild && childName && birthDate) {
-          // Handle Excel Date format
-          if (birthDate instanceof Date) {
-            birthDate = format(birthDate, 'yyyy-MM-dd');
-          } else if (typeof birthDate === 'number') {
-            const date = new Date((birthDate - 25569) * 86400 * 1000);
-            birthDate = format(date, 'yyyy-MM-dd');
-          }
-
-          let familyId = '';
-          let parentIds: string[] = [];
-
-          if (normPhone && phoneToFamily[normPhone]) {
-            familyId = phoneToFamily[normPhone].familyId;
-            parentIds = phoneToFamily[normPhone].parentIds;
-          } else {
-            familyId = `family_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-            if (normPhone) {
-              phoneToFamily[normPhone] = { familyId, parentIds: [] };
-            }
-          }
-
+        
+        for (const c of (family.children || [])) {
           const childRef = doc(collection(db, 'children'));
           await setDoc(childRef, {
-            name: String(childName),
-            birthDate: String(birthDate),
+            name: c.name || 'Criança',
+            birthDate: c.birthDate || new Date().toISOString().split('T')[0],
             status: 'Ativa',
-            allergies: findValue(row, ['Alergias', 'Alergia', 'Allergies']) || 'Nenhuma',
-            specialNeeds: findValue(row, ['Necessidades Especiais', 'Obs', 'Observação', 'Special Needs']) || 'Nenhuma',
+            allergies: c.allergies || 'Nenhuma',
+            specialNeeds: c.specialNeeds || 'Nenhuma',
             familyId,
             parentIds,
             parentId: parentIds[0] || '',
@@ -388,42 +341,18 @@ export default function App() {
             checkedIn: false,
             createdAt: new Date().toISOString()
           });
-          countChildren++;
-        } else if (!isChild && type.includes('respons')) {
-            // Already handled
-        } else {
-          skippedCount++;
+          kidsCount++;
         }
       }
 
-      if (countChildren === 0 && countParents === 0) {
-        toast.error('Nenhum dado válido encontrado. Verifique se o Tipo é "criança" ou "responsável".', { id: t });
-      } else {
-        toast.success(`Importação concluída: ${countChildren} crianças e ${countParents} responsáveis!`, { id: t });
-      }
+      toast.success(`${kidsCount} crianças e ${parentsCount} responsáveis cadastrados com sucesso!`, { id: t });
+      setLaunchTextInput('');
     } catch (error) {
-      console.error('Erro na importação de planilha:', error);
-      toast.error('Erro ao importar planilha. Verifique o formato.', { id: t });
+      console.error('Erro no Smart Launch:', error);
+      toast.error('Erro ao processar texto com IA. Verifique as informações.', { id: t });
     } finally {
       setIsImporting(false);
-      e.target.value = '';
     }
-  };
-
-  const downloadTemplate = () => {
-    const templateData = [
-      {
-        'nome': 'Exemplo Silva',
-        'Data de nascimento': '2020-05-15',
-        'Tipo': 'Ativa',
-        'Telefone': '24999999999'
-      }
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Template');
-    XLSX.writeFile(workbook, 'template_aljava_controle.xlsx');
   };
 
   const handleFileUpload = async (file: File, path: string): Promise<string> => {
@@ -4209,36 +4138,31 @@ export default function App() {
                         </Button>
                       </div>
 
-                      <div className="p-10 bg-blue-50/50 rounded-[3rem] border border-blue-100 flex flex-col md:flex-row items-center justify-between gap-8">
+                      <div className="p-10 bg-blue-50/50 rounded-[3rem] border border-blue-100 flex flex-col gap-6">
                         <div className="flex items-center gap-6">
                           <div className="w-16 h-16 bg-blue-100 rounded-[1.5rem] flex items-center justify-center text-blue-600 shadow-inner">
-                            <FileSpreadsheet className="w-8 h-8" />
+                            <Wand2 className="w-8 h-8" />
                           </div>
                           <div className="flex-1">
-                            <h4 className="text-xl font-black text-slate-900 tracking-tight">Importar Planilha Excel</h4>
-                            <p className="text-slate-500 font-medium max-w-md">Vincule uma nova planilha com dados de crianças e responsáveis.</p>
-                            <Button 
-                              variant="link" 
-                              onClick={downloadTemplate}
-                              className="p-0 h-auto text-blue-600 font-bold text-xs mt-1"
-                            >
-                              Baixar modelo de planilha
-                            </Button>
+                            <h4 className="text-xl font-black text-slate-900 tracking-tight">Lançamento Inteligente (IA)</h4>
+                            <p className="text-slate-500 font-medium">Cole as informações (listas, conversas ou lembretes) e a IA fará os cadastros automaticamente.</p>
                           </div>
                         </div>
-                        <div className="flex flex-col gap-3 w-full md:w-auto">
-                          <input 
-                            type="file" 
-                            id="spreadsheet-import" 
-                            className="hidden" 
-                            accept=".xlsx, .xls, .csv" 
-                            onChange={handleSpreadsheetImport}
+                        
+                        <div className="space-y-4">
+                          <textarea
+                            value={launchTextInput}
+                            onChange={(e) => setLaunchTextInput(e.target.value)}
+                            placeholder="Ex: Maria Alice, nasc 10/05/2018. Mãe: Tatiana, fone 24 99999-9999. Sem alergias."
+                            className="w-full h-40 rounded-2xl border-none bg-white shadow-inner p-6 font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 transition-all resize-none"
                           />
                           <Button 
-                            className="w-full md:w-auto h-14 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs shadow-xl shadow-blue-500/20 px-10"
-                            onClick={() => document.getElementById('spreadsheet-import')?.click()}
+                            onClick={handleSmartLaunch}
+                            disabled={isImporting || !launchTextInput.trim()}
+                            className="w-full h-14 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs shadow-xl shadow-blue-500/20 px-10"
                           >
-                            {isImporting ? 'Processando...' : 'Carregar Planilha'}
+                            {isImporting ? <Sparkles className="w-4 h-4 animate-pulse mr-2" /> : <Send className="w-4 h-4 mr-2" />}
+                            {isImporting ? 'Processando Lançamento...' : 'Processar e Cadastrar'}
                           </Button>
                         </div>
                       </div>
