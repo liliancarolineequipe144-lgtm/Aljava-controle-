@@ -269,26 +269,34 @@ export default function App() {
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
-      const prompt = `Você é um assistente do Ministério Infantil Aljava. Sua tarefa é extrair informações de crianças e responsáveis do texto fornecido.
+      const prompt = `Você é um assistente do Ministério Infantil Aljava. Sua tarefa é extrair informações de crianças e responsáveis do texto fornecido pelo usuário.
       
       TEXTO PARA PROCESSAR:
       "${launchTextInput}"
       
-      REGRAS:
-      1. Extraia o nome da criança, data de nascimento (formato YYYY-MM-DD), e se houver, alergias ou observações.
-      2. Extraia o nome do responsável, telefone (apenas números), líder/rede e parentesco.
-      3. Se várias crianças pertencerem à mesma família/responsável, agrupe-as no mesmo objeto de família.
-      4. Retorne APENAS um JSON válido no seguinte formato:
+      REGRAS DE EXTRAÇÃO:
+      1. Identifique blocos de "Família", "Responsável" e "Criança".
+      2. Para cada Criança: Extraia nome completo e data de nascimento (converta para YYYY-MM-DD). Se não houver data, use "".
+      3. Para cada Responsável: Extraia nome completo, data de nascimento (se houver), e telefone (apenas números).
+      4. Se houver um campo "Família:", use isso para agrupar todas as crianças e responsáveis abaixo dele no mesmo objeto de família.
+      5. Converta nomes para Capitalized (Primeira Letra Maiúscula).
+      
+      FORMATO DE RETORNO (JSON APENAS):
       {
         "families": [
           {
-            "parents": [{ "name": "...", "phone": "...", "leader": "...", "relation": "..." }],
-            "children": [{ "name": "...", "birthDate": "YYYY-MM-DD", "allergies": "...", "specialNeeds": "..." }]
+            "familyName": "...",
+            "parents": [
+              { "name": "...", "phone": "...", "leader": "-", "relation": "Responsável" }
+            ],
+            "children": [
+              { "name": "...", "birthDate": "YYYY-MM-DD", "allergies": "Nenhuma", "specialNeeds": "Nenhuma" }
+            ]
           }
         ]
       }
       
-      IMPORTANTE: Se não encontrar a data de nascimento, tente inferir pela idade se mencionada. Se não houver pista, use a data atual. O telefone deve conter apenas números.`;
+      IMPORTANTE: Retorne APENAS o JSON. O telefone deve ter apenas números (DDD + Número). Se a data estiver em formato PT-BR (DD/MM/AAAA), converta para YYYY-MM-DD.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-flash-latest",
@@ -2275,27 +2283,27 @@ export default function App() {
               </DialogContent>
             </Dialog>
 
-            <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2'} gap-8`}>
+            <div className={`grid grid-cols-1 ${isAdmin ? 'md:grid-cols-2 lg:grid-cols-4' : 'md:grid-cols-2'} gap-4 md:gap-8`}>
               <Card className="bento-card group overflow-hidden border-none shadow-xl shadow-slate-200/50">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
-                <CardHeader className="p-8 pb-4 relative z-10">
-                  <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-400 group-hover:text-primary transition-colors">
-                    <div className="w-10 h-10 bg-primary/5 rounded-xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all duration-500">
-                      <TrendingUp className="w-5 h-5" />
+                <CardHeader className="p-6 md:p-8 pb-3 md:pb-4 relative z-10">
+                  <CardTitle className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 md:gap-3 text-slate-400 group-hover:text-primary transition-colors">
+                    <div className="w-8 h-8 md:w-10 md:h-10 bg-primary/5 rounded-lg md:rounded-xl flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all duration-500">
+                      <TrendingUp className="w-4 h-4 md:w-5 md:h-5" />
                     </div>
                     Flechas Ativas
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-8 pt-0 relative z-10">
-                  <div className="text-6xl font-black text-slate-900 tracking-tighter">
+                <CardContent className="p-6 md:p-8 pt-0 relative z-10">
+                  <div className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter">
                     {children.filter(c => c.status === 'Ativa' || c.status === undefined).length}
                   </div>
-                  <div className="flex items-center justify-between mt-6">
-                    <p className="text-sm font-medium text-slate-400 flex items-center gap-2">
-                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                      Total de {children.length}
+                  <div className="flex items-center justify-between mt-4 md:mt-6">
+                    <p className="text-xs md:text-sm font-medium text-slate-400 flex items-center gap-1.5 md:gap-2">
+                      <span className="w-1.5 h-1.5 md:w-2 md:h-2 bg-green-500 rounded-full animate-pulse" />
+                      Total: {children.length}
                     </p>
-                    <Badge className="bg-green-50 text-green-600 border-none font-black text-[10px]">
+                    <Badge className="bg-green-50 text-green-600 border-none font-black text-[9px] md:text-[10px]">
                       {children.length > 0 ? Math.round((children.filter(c => c.status === 'Ativa' || c.status === undefined).length / children.length) * 100) : 0}%
                     </Badge>
                   </div>
@@ -2304,42 +2312,42 @@ export default function App() {
 
               <Card className="bento-card group overflow-hidden border-none shadow-xl shadow-slate-200/50">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
-                <CardHeader className="p-8 pb-4 relative z-10">
-                  <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-400 group-hover:text-amber-500 transition-colors">
-                    <div className="w-10 h-10 bg-amber-500/5 rounded-xl flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-all duration-500">
-                      <UserMinus className="w-5 h-5" />
+                <CardHeader className="p-6 md:p-8 pb-3 md:pb-4 relative z-10">
+                  <CardTitle className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 md:gap-3 text-slate-400 group-hover:text-amber-500 transition-colors">
+                    <div className="w-8 h-8 md:w-10 md:h-10 bg-amber-500/5 rounded-lg md:rounded-xl flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-all duration-500">
+                      <UserMinus className="w-4 h-4 md:w-5 md:h-5" />
                     </div>
                     Flechas Inativas
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="p-8 pt-0 relative z-10">
-                  <div className="text-6xl font-black text-slate-900 tracking-tighter">
+                <CardContent className="p-6 md:p-8 pt-0 relative z-10">
+                  <div className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter">
                     {children.filter(c => c.status === 'Inativa').length}
                   </div>
-                  <p className="text-sm font-medium text-slate-400 mt-6">Aguardando retorno</p>
+                  <p className="text-xs md:text-sm font-medium text-slate-400 mt-4 md:mt-6">Aguardando retorno</p>
                 </CardContent>
               </Card>
 
               {isAdmin && (
                 <Card className="bento-card group overflow-hidden border-none shadow-xl shadow-slate-200/50">
                   <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 rounded-full -mr-16 -mt-16 group-hover:scale-150 transition-transform duration-700" />
-                  <CardHeader className="p-8 pb-4 relative z-10">
-                    <CardTitle className="text-xs font-black uppercase tracking-[0.2em] flex items-center gap-3 text-slate-400 group-hover:text-blue-500 transition-colors">
-                      <div className="w-10 h-10 bg-blue-500/5 rounded-xl flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all duration-500">
-                        <Users className="w-5 h-5" />
+                  <CardHeader className="p-6 md:p-8 pb-3 md:pb-4 relative z-10">
+                    <CardTitle className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] flex items-center gap-2 md:gap-3 text-slate-400 group-hover:text-blue-500 transition-colors">
+                      <div className="w-8 h-8 md:w-10 md:h-10 bg-blue-500/5 rounded-lg md:rounded-xl flex items-center justify-center text-blue-500 group-hover:bg-blue-500 group-hover:text-white transition-all duration-500">
+                        <Users className="w-4 h-4 md:w-5 md:h-5" />
                       </div>
-                      Equipe {appSettings.appName}
+                      Equipe
                     </CardTitle>
                   </CardHeader>
-                  <CardContent className="p-8 pt-0 relative z-10">
-                    <div className="flex gap-8 items-end">
+                  <CardContent className="p-6 md:p-8 pt-0 relative z-10">
+                    <div className="flex gap-6 md:gap-8 items-end">
                       <div>
-                        <div className="text-6xl font-black text-slate-900 tracking-tighter">
+                        <div className="text-4xl md:text-6xl font-black text-slate-900 tracking-tighter">
                           {volunteers.filter(v => v.role === 'Ministro').length}
                         </div>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-blue-500 mt-2">Ministros</p>
+                        <p className="text-[9px] md:text-[10px] font-black uppercase tracking-widest text-blue-500 mt-1.5 md:mt-2">Ministros</p>
                       </div>
-                      <div className="h-12 w-px bg-slate-100 mb-2"></div>
+                      <div className="h-10 md:h-12 w-px bg-slate-100 mb-2"></div>
                       <div>
                         <div className="text-6xl font-black text-slate-400 tracking-tighter">
                           {volunteers.filter(v => v.role === 'Auxiliar').length}
@@ -2382,30 +2390,30 @@ export default function App() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               {isAdmin && (
                 <Card className="bento-card overflow-hidden group border-none shadow-2xl shadow-orange-200/20">
-                  <CardHeader className="p-8 bg-orange-50/30 border-b border-orange-100/50">
-                    <CardTitle className="text-xl font-black flex items-center gap-3 text-orange-700">
-                      <div className="w-12 h-12 bg-orange-100 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-500">
-                        <AlertCircle className="w-6 h-6" />
+                  <CardHeader className="p-6 md:p-8 bg-orange-50/30 border-b border-orange-100/50">
+                    <CardTitle className="text-lg md:text-xl font-black flex items-center gap-3 text-orange-700">
+                      <div className="w-10 h-10 md:w-12 md:h-12 bg-orange-100 rounded-xl md:rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-500">
+                        <AlertCircle className="w-5 h-5 md:w-6 md:h-6" />
                       </div>
                       Materiais Críticos
                     </CardTitle>
-                    <CardDescription className="text-orange-600/70 font-medium">Itens que precisam de reposição</CardDescription>
+                    <CardDescription className="text-orange-600/70 font-medium text-xs md:text-sm">Itens que precisam de reposição</CardDescription>
                   </CardHeader>
                   <CardContent className="p-0">
                     <ScrollArea className="h-[400px]">
-                      <div className="p-6 space-y-4">
+                      <div className="p-4 md:p-6 space-y-3 md:space-y-4">
                         {materials.filter(m => m.quantity <= m.minQuantity).length > 0 ? (
                           materials
                             .filter(m => m.quantity <= m.minQuantity)
                             .map(m => (
-                              <div key={m.id} className="p-5 flex items-center justify-between bg-white rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all group/item shadow-sm hover:shadow-md">
-                                <div className="flex items-center gap-4">
-                                  <div className="w-12 h-12 bg-orange-50 rounded-xl flex items-center justify-center border border-orange-100 group-hover/item:scale-110 transition-transform">
-                                    <Package className="w-6 h-6 text-orange-400" />
+                              <div key={m.id} className="p-4 md:p-5 flex items-center justify-between bg-white rounded-xl md:rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all group/item shadow-sm hover:shadow-md">
+                                <div className="flex items-center gap-3 md:gap-4">
+                                  <div className="w-10 h-10 md:w-12 md:h-12 bg-orange-50 rounded-lg md:rounded-xl flex items-center justify-center border border-orange-100 group-hover/item:scale-110 transition-transform">
+                                    <Package className="w-5 h-5 md:w-6 md:h-6 text-orange-400" />
                                   </div>
                                   <div>
-                                    <p className="font-bold text-slate-900 text-lg leading-tight">{m.name}</p>
-                                    <p className="text-xs font-medium text-slate-500 mt-1">
+                                    <p className="font-bold text-slate-900 text-base md:text-lg leading-tight">{m.name}</p>
+                                    <p className="text-[10px] md:text-xs font-medium text-slate-500 mt-0.5 md:mt-1">
                                       Estoque: <span className="text-red-500 font-black">{m.quantity}</span> / Mín: {m.minQuantity}
                                     </p>
                                   </div>
@@ -2413,7 +2421,7 @@ export default function App() {
                                 <Button 
                                   size="sm" 
                                   variant="outline" 
-                                  className="rounded-full px-4 border-orange-200 text-orange-600 hover:bg-orange-50 font-bold" 
+                                  className="rounded-full px-3 md:px-4 h-8 md:h-9 border-orange-200 text-orange-600 hover:bg-orange-50 font-bold text-[10px] md:text-xs" 
                                   onClick={() => updateMaterialQuantity(m, 5)}
                                 >
                                   Repor
@@ -2421,9 +2429,9 @@ export default function App() {
                               </div>
                             ))
                         ) : (
-                          <div className="py-20 text-center text-slate-400">
-                            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                              <CheckCircle2 className="w-10 h-10 text-green-500" />
+                          <div className="py-12 md:py-20 text-center text-slate-400">
+                            <div className="w-16 h-16 md:w-20 md:h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4 md:mb-6">
+                              <CheckCircle2 className="w-8 h-8 md:w-10 md:h-10 text-green-500" />
                             </div>
                             <p className="font-black text-lg text-slate-600">Estoque em dia!</p>
                             <p className="text-sm mt-2">Nenhum item em alerta.</p>
@@ -2436,18 +2444,18 @@ export default function App() {
               )}
 
               <Card className="bento-card overflow-hidden group border-none shadow-2xl shadow-pink-200/20">
-                <CardHeader className="p-8 bg-pink-50/30 border-b border-pink-100/50">
-                  <CardTitle className="text-xl font-black flex items-center gap-3 text-pink-700">
-                    <div className="w-12 h-12 bg-pink-100 rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-500">
-                      <Cake className="w-6 h-6" />
+                <CardHeader className="p-6 md:p-8 bg-pink-50/30 border-b border-pink-100/50">
+                  <CardTitle className="text-lg md:text-xl font-black flex items-center gap-3 text-pink-700">
+                    <div className="w-10 h-10 md:w-12 md:h-12 bg-pink-100 rounded-xl md:rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform duration-500">
+                      <Cake className="w-5 h-5 md:w-6 md:h-6" />
                     </div>
                     Aniversariantes
                   </CardTitle>
-                  <CardDescription className="text-pink-600/70 font-medium">Celebrando a vida este mês</CardDescription>
+                  <CardDescription className="text-pink-600/70 font-medium text-xs md:text-sm">Celebrando a vida este mês</CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
                   <ScrollArea className="h-[400px]">
-                    <div className="p-6 space-y-4">
+                    <div className="p-4 md:p-6 space-y-3 md:space-y-4">
                       {/* Children Birthdays */}
                       {children
                         .filter(child => {
@@ -2458,19 +2466,19 @@ export default function App() {
                         .map(child => {
                           const parent = parents.find(p => (child.familyId && p.familyId === child.familyId) || p.id === child.parentId);
                           return (
-                            <div key={child.id} className="p-5 flex items-center justify-between bg-white rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all group/item shadow-sm hover:shadow-md">
-                              <div className="flex items-center gap-4">
-                                <div className="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center border border-pink-100 group-hover/item:scale-110 transition-transform">
-                                  <Baby className="w-6 h-6 text-pink-400" />
+                            <div key={child.id} className="p-4 md:p-5 flex items-center justify-between bg-white rounded-xl md:rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all group/item shadow-sm hover:shadow-md">
+                              <div className="flex items-center gap-3 md:gap-4">
+                                <div className="w-10 h-10 md:w-12 md:h-12 bg-pink-50 rounded-lg md:rounded-xl flex items-center justify-center border border-pink-100 group-hover/item:scale-110 transition-transform">
+                                  <Baby className="w-5 h-5 md:w-6 md:h-6 text-pink-400" />
                                 </div>
                                 <div>
-                                  <p className="font-bold text-slate-900 text-lg leading-tight">{child.name}</p>
-                                  <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Flecha • Dia {parseInt(child.birthDate.split('-')[2], 10)}</p>
+                                  <p className="font-bold text-slate-900 text-base md:text-lg leading-tight">{child.name}</p>
+                                  <p className="text-[9px] md:text-[10px] text-slate-500 uppercase font-black tracking-widest mt-0.5 md:mt-1">Flecha • Dia {parseInt(child.birthDate.split('-')[2], 10)}</p>
                                 </div>
                               </div>
                               {parent && (
-                                <Button size="sm" variant="ghost" className="rounded-full w-10 h-10 p-0 text-green-600 hover:bg-green-50" onClick={() => sendBirthdayMessage(child, parent)}>
-                                  <MessageCircle className="w-5 h-5" />
+                                <Button size="sm" variant="ghost" className="rounded-full w-8 h-8 md:w-10 md:h-10 p-0 text-green-600 hover:bg-green-50" onClick={() => sendBirthdayMessage(child, parent)}>
+                                  <MessageCircle className="w-4 h-4 md:w-5 md:h-5" />
                                 </Button>
                               )}
                             </div>
@@ -2486,18 +2494,18 @@ export default function App() {
                         })
                         .sort((a, b) => parseInt(a.birthDate!.split('-')[2], 10) - parseInt(b.birthDate!.split('-')[2], 10))
                         .map(v => (
-                          <div key={v.id} className="p-5 flex items-center justify-between bg-white rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all group/item shadow-sm hover:shadow-md">
-                            <div className="flex items-center gap-4">
-                              <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center border border-blue-100 group-hover/item:scale-110 transition-transform">
-                                <UserCheck className="w-6 h-6 text-blue-400" />
+                          <div key={v.id} className="p-4 md:p-5 flex items-center justify-between bg-white rounded-xl md:rounded-2xl border border-slate-100 hover:bg-slate-50 transition-all group/item shadow-sm hover:shadow-md">
+                            <div className="flex items-center gap-3 md:gap-4">
+                              <div className="w-10 h-10 md:w-12 md:h-12 bg-blue-50 rounded-lg md:rounded-xl flex items-center justify-center border border-blue-100 group-hover/item:scale-110 transition-transform">
+                                <UserCheck className="w-5 h-5 md:w-6 md:h-6 text-blue-400" />
                               </div>
                               <div>
-                                <p className="font-bold text-slate-900 text-lg leading-tight">{v.name}</p>
-                                <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Voluntário • Dia {parseInt(v.birthDate!.split('-')[2], 10)}</p>
+                                <p className="font-bold text-slate-900 text-base md:text-lg leading-tight">{v.name}</p>
+                                <p className="text-[9px] md:text-[10px] text-slate-500 uppercase font-black tracking-widest mt-0.5 md:mt-1">Voluntário • Dia {parseInt(v.birthDate!.split('-')[2], 10)}</p>
                               </div>
                             </div>
-                            <Button size="sm" variant="ghost" className="rounded-full w-10 h-10 p-0 text-green-600 hover:bg-green-50" onClick={() => sendVolunteerBirthdayMessage(v)}>
-                              <MessageCircle className="w-5 h-5" />
+                            <Button size="sm" variant="ghost" className="rounded-full w-8 h-8 md:w-10 md:h-10 p-0 text-green-600 hover:bg-green-50" onClick={() => sendVolunteerBirthdayMessage(v)}>
+                              <MessageCircle className="w-4 h-4 md:w-5 md:h-5" />
                             </Button>
                           </div>
                         ))
@@ -2578,56 +2586,56 @@ export default function App() {
             </div>
           </TabsContent>
 
-          <TabsContent value="checkin" className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+          <TabsContent value="checkin" className="space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-10">
               {/* Scanner e Ações Rápidas */}
-              <div className="lg:col-span-1 space-y-8">
+              <div className="lg:col-span-1 space-y-6 md:space-y-8">
                 <Card className="bento-card overflow-hidden">
-                  <div className="p-10 aljava-gradient text-white">
-                    <h2 className="text-3xl font-black flex items-center gap-3 tracking-tight">
-                      <ScanLine className="w-8 h-8" />
+                  <div className="p-6 md:p-10 aljava-gradient text-white">
+                    <h2 className="text-xl md:text-3xl font-black flex items-center gap-2 md:gap-3 tracking-tight">
+                      <ScanLine className="w-6 h-6 md:w-8 md:h-8" />
                       Scanner QR
                     </h2>
-                    <p className="text-white/70 font-medium mt-2">Aponte a câmera para o QR Code</p>
+                    <p className="text-white/70 font-medium mt-1 md:mt-2 text-xs md:text-base">Aponte a câmera para o QR Code</p>
                   </div>
-                  <CardContent className="p-10">
+                  <CardContent className="p-6 md:p-10">
                     {!isScannerOpen ? (
                       <Button 
                         onClick={() => setIsScannerOpen(true)}
-                        className="w-full h-40 rounded-[2rem] border-2 border-dashed border-slate-100 bg-slate-50/50 hover:bg-slate-50 hover:border-primary/30 transition-all flex flex-col gap-4 text-slate-400 hover:text-primary group"
+                        className="w-full h-32 md:h-40 rounded-xl md:rounded-[2rem] border-2 border-dashed border-slate-100 bg-slate-50/50 hover:bg-slate-50 hover:border-primary/30 transition-all flex flex-col gap-3 md:gap-4 text-slate-400 hover:text-primary group"
                       >
-                        <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
-                          <QrCode className="w-8 h-8" />
+                        <div className="w-12 h-12 md:w-16 md:h-16 bg-white rounded-xl md:rounded-2xl flex items-center justify-center shadow-sm group-hover:scale-110 transition-transform">
+                          <QrCode className="w-6 h-6 md:w-8 md:h-8" />
                         </div>
-                        <span className="font-black uppercase tracking-widest text-xs">Abrir Câmera</span>
+                        <span className="font-black uppercase tracking-widest text-[10px] md:text-xs">Abrir Câmera</span>
                       </Button>
                     ) : (
-                      <div className="space-y-6">
-                        <div id="reader" className="overflow-hidden rounded-[2rem] border-4 border-primary/10 shadow-inner"></div>
+                      <div className="space-y-4 md:space-y-6">
+                        <div id="reader" className="overflow-hidden rounded-xl md:rounded-[2rem] border-4 border-primary/10 shadow-inner"></div>
                         <Button 
                           variant="ghost" 
                           onClick={() => setIsScannerOpen(false)}
-                          className="w-full h-14 rounded-2xl text-red-500 hover:bg-red-50 font-black uppercase tracking-widest text-xs"
+                          className="w-full h-12 md:h-14 rounded-xl md:rounded-2xl text-red-500 hover:bg-red-50 font-black uppercase tracking-widest text-[10px] md:text-xs"
                         >
                           Cancelar Scanner
                         </Button>
                       </div>
                     )}
 
-                    <div className="mt-10 pt-10 border-t border-slate-50">
-                      <h3 className="text-xs font-black text-slate-900 mb-6 flex items-center gap-2 uppercase tracking-[0.2em]">
+                    <div className="mt-6 md:mt-10 pt-6 md:pt-10 border-t border-slate-50">
+                      <h3 className="text-[10px] md:text-xs font-black text-slate-900 mb-4 md:mb-6 flex items-center gap-2 uppercase tracking-[0.2em]">
                         <Info className="w-4 h-4 text-primary" />
                         Instruções
                       </h3>
-                      <ul className="space-y-4">
+                      <ul className="space-y-3 md:space-y-4">
                         {[
                           "Escaneie o QR Code no cartão de entrada enviado aos pais.",
                           "O sistema identificará a criança e registrará a entrada/saída.",
                           "Para pais sem celular, use a busca manual ao lado."
                         ].map((text, i) => (
-                          <li key={i} className="flex gap-4 items-start">
-                            <div className="w-6 h-6 rounded-lg bg-primary/5 text-primary flex items-center justify-center flex-shrink-0 font-black text-[10px]">{i + 1}</div>
-                            <p className="text-sm font-medium text-slate-500 leading-relaxed">{text}</p>
+                          <li key={i} className="flex gap-3 md:gap-4 items-start">
+                            <div className="w-5 h-5 md:w-6 md:h-6 rounded-lg bg-primary/5 text-primary flex items-center justify-center flex-shrink-0 font-black text-[9px] md:text-[10px]">{i + 1}</div>
+                            <p className="text-xs md:text-sm font-medium text-slate-500 leading-relaxed">{text}</p>
                           </li>
                         ))}
                       </ul>
@@ -2693,115 +2701,153 @@ export default function App() {
                       return (
                         <motion.div
                           key={child.id}
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          whileHover={{ y: -5 }}
+                          transition={{ duration: 0.3 }}
                         >
-                          <Card className={`rounded-[2.5rem] border-none shadow-xl transition-all duration-500 hover:scale-[1.02] ${child.checkedIn ? 'bg-green-50/50 ring-2 ring-green-100' : 'bg-white shadow-slate-200/50'}`}>
-                            <CardContent className="p-8">
-                              <div className="flex justify-between items-start gap-4">
-                                <div className="flex gap-5">
-                                  {child.photoUrl ? (
-                                    <img src={child.photoUrl} alt={child.name} className="w-16 h-16 rounded-2xl object-cover border-4 border-white shadow-lg" referrerPolicy="no-referrer" />
-                                  ) : (
-                                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner ${child.checkedIn ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
-                                      <Baby className="w-8 h-8" />
+                          <Card className={`rounded-[2.5rem] border-none shadow-xl transition-all duration-500 overflow-hidden ${child.checkedIn ? 'bg-gradient-to-br from-green-50 to-emerald-50 ring-2 ring-green-100 shadow-green-200/20' : 'bg-white shadow-slate-200/40 hover:shadow-2xl hover:shadow-blue-500/10'}`}>
+                            <CardContent className="p-0">
+                              <div className="p-8">
+                                <div className="flex justify-between items-start gap-4">
+                                  <div className="flex gap-5">
+                                    <div className="relative">
+                                      {child.photoUrl ? (
+                                        <img src={child.photoUrl} alt={child.name} className="w-16 h-16 rounded-2xl object-cover border-4 border-white shadow-lg" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-inner ${child.checkedIn ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-400'}`}>
+                                          <Baby className="w-8 h-8" />
+                                        </div>
+                                      )}
+                                      {child.checkedIn && (
+                                        <div className="absolute -top-2 -right-2 w-6 h-6 bg-green-500 rounded-full border-2 border-white flex items-center justify-center text-white">
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                        </div>
+                                      )}
                                     </div>
-                                  )}
-                                  <div>
-                                    <h4 className="font-black text-xl text-slate-900 tracking-tight leading-tight">{child.name}</h4>
-                                    <p className="text-sm font-medium text-slate-500 mt-1">{parent?.name || 'Responsável não cadastrado'}</p>
-                                    {child.checkedIn && child.lastCheckIn && (
-                                      <div className="text-[10px] text-green-600 font-black uppercase tracking-widest mt-3 flex items-center gap-2 bg-green-100/50 w-fit px-3 py-1 rounded-full">
-                                        <Clock className="w-3 h-3" />
-                                        Entrou às {format(new Date(child.lastCheckIn), 'HH:mm')}
+                                    <div className="space-y-1">
+                                      <h4 className="font-black text-xl text-slate-900 tracking-tight leading-tight group-hover:text-primary transition-colors">{child.name}</h4>
+                                      <div className="flex items-center gap-2">
+                                        <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">{parent?.name || '---'}</p>
+                                        <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest bg-slate-50/50 border-slate-100 text-slate-400">
+                                          {getAgeGroup(child.birthDate).label}
+                                        </Badge>
                                       </div>
-                                    )}
+                                      
+                                      <div className="flex flex-wrap gap-2 mt-3">
+                                        {child.allergies && child.allergies !== 'Nenhuma' && (
+                                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-red-100/50 text-red-600 rounded-lg text-[9px] font-black uppercase tracking-widest border border-red-100">
+                                            <AlertCircle className="w-3 h-3" />
+                                            Alergia
+                                          </div>
+                                        )}
+                                        {child.specialNeeds && child.specialNeeds !== 'Nenhuma' && (
+                                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-100/50 text-amber-600 rounded-lg text-[9px] font-black uppercase tracking-widest border border-amber-100">
+                                            <Info className="w-3 h-3" />
+                                            Obs
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
-                                <div className="flex flex-col gap-3">
-                                  <Button 
-                                    size="sm" 
-                                    variant={child.checkedIn ? "destructive" : "default"}
-                                    className={`rounded-xl font-black uppercase tracking-widest text-[10px] h-10 px-6 ${!child.checkedIn ? 'aljava-gradient shadow-lg shadow-primary/20' : 'shadow-lg shadow-red-500/20'}`}
-                                    onClick={() => handleCheckIn(child.id!, true)}
-                                  >
-                                    {child.checkedIn ? 'Check-out' : 'Check-in'}
-                                  </Button>
-                                  {child.checkedIn && (
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline" 
-                                      className="rounded-xl h-10 border-green-200 text-green-600 hover:bg-green-50 font-black uppercase tracking-widest text-[10px]"
-                                      onClick={() => finalizarCheckinECompartilhar(`entry-card-${child.id}`, child.name)}
-                                    >
-                                      <Share2 className="w-4 h-4 mr-2" />
-                                      Comprovante
-                                    </Button>
-                                  )}
-                                  <Dialog>
-                                    <DialogTrigger render={
-                                      <Button 
-                                        size="sm" 
-                                        variant="outline" 
-                                        className="rounded-xl h-9 border-slate-200 text-slate-500"
-                                        onClick={() => setSelectedChildForQr(child)}
-                                      >
-                                        <QrCode className="w-3 h-3 mr-2" />
-                                        Cartão
-                                      </Button>
-                                    } />
-                                    <DialogContent className="max-w-sm rounded-[2.5rem] p-0 max-h-[90vh] overflow-y-auto border-none shadow-2xl scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
-                                    <div id={`entry-card-${child.id}`} className="bg-white">
-                                      <div className="aljava-gradient p-8 text-white text-center">
-                                        <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
-                                          <QrCode className="w-10 h-10" />
+                                  
+                                  <div className="flex flex-col gap-2">
+                                    <Dialog>
+                                      <DialogTrigger render={
+                                        <Button 
+                                          size="icon" 
+                                          variant="ghost" 
+                                          className="h-10 w-10 rounded-xl bg-slate-50 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                                          onClick={() => setSelectedChildForQr(child)}
+                                        >
+                                          <QrCode className="w-5 h-5" />
+                                        </Button>
+                                      } />
+                                      <DialogContent className="max-w-sm rounded-[2.5rem] p-0 max-h-[90vh] overflow-y-auto border-none shadow-2xl scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
+                                      <div id={`entry-card-${child.id}`} className="bg-white">
+                                        <div className="aljava-gradient p-8 text-white text-center">
+                                          <div className="w-20 h-20 bg-white/20 rounded-3xl flex items-center justify-center mx-auto mb-4 backdrop-blur-sm">
+                                            <QrCode className="w-10 h-10" />
+                                          </div>
+                                          <h3 className="text-2xl font-bold">Cartão {appSettings.appName}</h3>
+                                          <p className="text-white/70 text-sm">Acesso Seguro</p>
                                         </div>
-                                        <h3 className="text-2xl font-bold">Cartão {appSettings.appName}</h3>
-                                        <p className="text-white/70 text-sm">Acesso Seguro</p>
-                                      </div>
-                                      <div className="p-8 pb-4 flex flex-col items-center gap-6">
-                                        <div className="p-4 bg-white rounded-3xl shadow-inner border-4 border-slate-50">
-                                          <QRCodeCanvas 
-                                            value={child.id || ''} 
-                                            size={200}
-                                            level="H"
-                                            includeMargin={true}
-                                          />
-                                        </div>
-                                        <div className="flex flex-col items-center gap-3">
-                                          {child.photoUrl && (
-                                            <img src={child.photoUrl} alt={child.name} className="w-20 h-20 rounded-2xl object-cover border-4 border-white shadow-lg -mt-10 bg-white" referrerPolicy="no-referrer" />
-                                          )}
-                                          <div className="text-center space-y-1">
-                                            <p className="font-black text-xl text-slate-900">{child.name}</p>
-                                            <p className="text-sm text-slate-500 font-medium">Responsável: {parent?.name}</p>
+                                        <div className="p-8 pb-4 flex flex-col items-center gap-6">
+                                          <div className="p-4 bg-white rounded-3xl shadow-inner border-4 border-slate-50">
+                                            <QRCodeCanvas 
+                                              value={child.id || ''} 
+                                              size={200}
+                                              level="H"
+                                              includeMargin={true}
+                                            />
+                                          </div>
+                                          <div className="flex flex-col items-center gap-3">
+                                            {child.photoUrl && (
+                                              <img src={child.photoUrl} alt={child.name} className="w-20 h-20 rounded-2xl object-cover border-4 border-white shadow-lg -mt-10 bg-white" referrerPolicy="no-referrer" />
+                                            )}
+                                            <div className="text-center space-y-1">
+                                              <p className="font-black text-xl text-slate-900">{child.name}</p>
+                                              <p className="text-sm text-slate-500 font-medium">Responsável: {parent?.name}</p>
+                                            </div>
                                           </div>
                                         </div>
                                       </div>
-                                    </div>
-                                    <div className="p-8 pt-0 flex flex-col items-center gap-6">
-                                      <div className="w-full pt-4 border-t border-slate-100 flex gap-3">
-                                        <Button 
-                                          className="flex-1 h-12 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold gap-2"
-                                          onClick={() => parent && sendEntryCard(child, parent)}
-                                        >
-                                          <Share2 className="w-4 h-4" />
-                                          Compartilhar
-                                        </Button>
-                                        <DialogClose render={
-                                          <Button variant="ghost" className="flex-1 h-12 rounded-xl text-slate-400 font-bold">
-                                            Fechar
+                                      <div className="p-8 pt-0 flex flex-col items-center gap-6">
+                                        <div className="w-full pt-4 border-t border-slate-100 flex gap-3">
+                                          <Button 
+                                            className="flex-1 h-12 rounded-xl bg-green-500 hover:bg-green-600 text-white font-bold gap-2"
+                                            onClick={() => parent && sendEntryCard(child, parent)}
+                                          >
+                                            <Share2 className="w-4 h-4" />
+                                            Compartilhar
                                           </Button>
-                                        } />
+                                          <DialogClose render={
+                                            <Button variant="ghost" className="flex-1 h-12 rounded-xl text-slate-400 font-bold">
+                                              Fechar
+                                            </Button>
+                                          } />
+                                        </div>
                                       </div>
-                                    </div>
-                                  </DialogContent>
-                                </Dialog>
+                                    </DialogContent>
+                                  </Dialog>
+                                    
+                                  {child.checkedIn && (
+                                    <Button 
+                                      size="icon" 
+                                      variant="ghost" 
+                                      className="h-10 w-10 rounded-xl bg-green-100 text-green-600 hover:bg-green-200"
+                                      onClick={() => finalizarCheckinECompartilhar(`entry-card-${child.id}`, child.name)}
+                                    >
+                                      <Share2 className="w-4 h-4" />
+                                    </Button>
+                                  )}
+                                  </div>
+                                </div>
                               </div>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </motion.div>
+
+                              <div className={`px-8 py-5 border-t flex items-center justify-between transition-colors ${child.checkedIn ? 'bg-green-500/5 border-green-500/10' : 'bg-slate-50/50 border-slate-100'}`}>
+                                <div className="flex-1">
+                                  {child.checkedIn && child.lastCheckIn ? (
+                                    <div className="text-[10px] text-green-600 font-black uppercase tracking-widest flex items-center gap-2">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      Check-in: {format(new Date(child.lastCheckIn), 'HH:mm')}
+                                    </div>
+                                  ) : (
+                                    <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Aguardando entrada</p>
+                                  )}
+                                </div>
+                                <Button 
+                                  size="sm" 
+                                  variant={child.checkedIn ? "destructive" : "default"}
+                                  className={`rounded-2xl font-black uppercase tracking-widest text-[10px] h-11 px-8 shadow-lg transition-transform active:scale-95 ${!child.checkedIn ? 'aljava-gradient shadow-primary/20' : 'bg-red-500 hover:bg-red-600 shadow-red-500/20'}`}
+                                  onClick={() => handleCheckIn(child.id!, true)}
+                                >
+                                  {child.checkedIn ? 'Check-out' : 'Check-in'}
+                                </Button>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </motion.div>
                     );
                   })}
 
@@ -2822,24 +2868,24 @@ export default function App() {
             </div>
           </TabsContent>
 
-          <TabsContent value="children" className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <div className="flex flex-col xl:flex-row gap-6 items-center justify-between bg-white p-6 rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-50">
+          <TabsContent value="children" className="space-y-6 md:space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <div className="flex flex-col xl:flex-row gap-4 md:gap-6 items-center justify-between bg-white p-4 md:p-6 rounded-2xl md:rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-50">
               <div className="relative w-full xl:w-[400px] group">
-                <Search className="absolute left-6 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-primary transition-colors" />
+                <Search className="absolute left-5 md:left-6 top-1/2 -translate-y-1/2 w-4 h-4 md:w-5 md:h-5 text-slate-400 group-focus-within:text-primary transition-colors" />
                 <Input 
-                  placeholder="Buscar flecha pelo nome..." 
-                  className="pl-14 h-16 rounded-2xl border-none bg-slate-50/50 focus:bg-white transition-all shadow-inner text-lg font-medium"
+                  placeholder="Buscar flecha..." 
+                  className="pl-12 md:pl-14 h-12 md:h-16 rounded-xl md:rounded-2xl border-none bg-slate-50/50 focus:bg-white transition-all shadow-inner text-sm md:text-lg font-medium"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <div className="flex flex-wrap gap-4 w-full xl:w-auto">
+              <div className="flex flex-wrap gap-2 md:gap-4 w-full xl:w-auto">
                 <Select value={ageFilter} onValueChange={setAgeFilter}>
-                  <SelectTrigger className="w-full sm:w-[200px] h-16 rounded-2xl border-none bg-slate-50/50 font-bold text-slate-600">
-                    <SelectValue placeholder="Filtrar Turma" />
+                  <SelectTrigger className="flex-1 sm:w-[200px] h-12 md:h-16 rounded-xl md:rounded-2xl border-none bg-slate-50/50 font-bold text-slate-600 text-xs md:text-sm">
+                    <SelectValue placeholder="Turma" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-2xl">
-                    <SelectItem value="all">Todas as Turmas</SelectItem>
+                  <SelectContent className="rounded-xl md:rounded-2xl">
+                    <SelectItem value="all">Todas</SelectItem>
                     <SelectItem value="G1">G1 (1-3 anos)</SelectItem>
                     <SelectItem value="G2">G2 (4-5 anos)</SelectItem>
                     <SelectItem value="G3">G3 (6-7 anos)</SelectItem>
@@ -2848,10 +2894,10 @@ export default function App() {
                 </Select>
 
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className="w-full sm:w-[160px] h-16 rounded-2xl border-none bg-slate-50/50 font-bold text-slate-600">
+                  <SelectTrigger className="w-[100px] md:w-[160px] h-12 md:h-16 rounded-xl md:rounded-2xl border-none bg-slate-50/50 font-bold text-slate-600 text-xs md:text-sm">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-2xl">
+                  <SelectContent className="rounded-xl md:rounded-2xl">
                     <SelectItem value="active">Ativas</SelectItem>
                     <SelectItem value="inactive">Inativas</SelectItem>
                     <SelectItem value="visitor">Visitantes</SelectItem>
@@ -2860,15 +2906,15 @@ export default function App() {
                 </Select>
                 
                 {isAdmin && (
-                  <Button onClick={exportToExcel} variant="outline" className="h-16 rounded-2xl border-slate-100 hover:bg-slate-50 px-6 font-bold text-slate-600">
-                    <FileSpreadsheet className="w-5 h-5 mr-3 text-green-600" />
+                  <Button onClick={exportToExcel} variant="outline" className="flex-1 sm:flex-none h-12 md:h-16 rounded-xl md:rounded-2xl border-slate-100 hover:bg-slate-50 px-4 md:px-6 font-bold text-slate-600 text-[10px] md:text-sm">
+                    <FileSpreadsheet className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3 text-green-600" />
                     Exportar
                   </Button>
                 )}
               
               {isAdmin && (
-                <Button onClick={() => setIsChildDialogOpen(true)} className="h-16 rounded-2xl aljava-gradient px-8 shadow-xl shadow-primary/20 font-black uppercase tracking-widest text-xs">
-                  <Plus className="w-5 h-5 mr-3" />
+                <Button onClick={() => setIsChildDialogOpen(true)} className="flex-1 sm:flex-none h-12 md:h-16 rounded-xl md:rounded-2xl aljava-gradient px-4 md:px-8 shadow-xl shadow-primary/20 font-black uppercase tracking-widest text-[10px] md:text-xs">
+                  <Plus className="w-4 h-4 md:w-5 md:h-5 mr-2 md:mr-3" />
                   Nova Flecha
                 </Button>
               )}
@@ -2883,17 +2929,17 @@ export default function App() {
                   <motion.div layout key={familyId} className="space-y-4">
                     <Card className="bento-card overflow-hidden group hover:scale-[1.01] transition-all duration-500">
                       <div className="h-2 w-full aljava-gradient" />
-                      <CardHeader className="p-8 pb-4">
+                      <CardHeader className="p-5 md:p-8 pb-4">
                         <div className="flex justify-between items-start">
-                          <div className="flex items-center gap-5">
-                            <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center text-primary shadow-inner group-hover:bg-primary group-hover:text-white transition-all duration-500">
-                              <Users className="w-8 h-8" />
+                          <div className="flex items-center gap-3 md:gap-5">
+                            <div className="w-12 h-12 md:w-16 md:h-16 rounded-xl md:rounded-2xl bg-primary/5 flex items-center justify-center text-primary shadow-inner group-hover:bg-primary group-hover:text-white transition-all duration-500">
+                              <Users className="w-6 h-6 md:w-8 md:h-8" />
                             </div>
                             <div>
-                              <CardTitle className="text-2xl font-black text-slate-900 tracking-tight">
+                              <CardTitle className="text-lg md:text-2xl font-black text-slate-900 tracking-tight">
                                 {group.familyName || `Família ${group.parents[0]?.name.split(' ').pop() || 'Sem Nome'}`}
                               </CardTitle>
-                              <CardDescription className="font-bold text-slate-500 mt-1">
+                              <CardDescription className="text-xs md:text-sm font-bold text-slate-500 mt-1">
                                 {group.children.length} {group.children.length === 1 ? 'Flecha' : 'Flechas'} • {group.parents.length} {group.parents.length === 1 ? 'Responsável' : 'Responsáveis'}
                               </CardDescription>
                             </div>
@@ -2903,7 +2949,7 @@ export default function App() {
                               <Button 
                                 size="sm" 
                                 variant="outline" 
-                                className="rounded-xl border-slate-100 hover:bg-primary hover:text-white transition-all font-bold h-10"
+                                className="hidden sm:flex rounded-xl border-slate-100 hover:bg-primary hover:text-white transition-all font-bold h-10"
                                 onClick={() => {
                                   setFamilyName(group.familyName || '');
                                   setGuardians(group.parents.map(p => ({
@@ -2922,8 +2968,8 @@ export default function App() {
                                 Adicionar Irmão
                               </Button>
                               <DropdownMenu>
-                                <DropdownMenuTrigger className="h-10 w-10 rounded-xl border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-colors outline-none">
-                                  <MoreVertical className="w-5 h-5 text-slate-400" />
+                                <DropdownMenuTrigger className="h-10 w-10 md:h-12 md:w-12 rounded-xl border border-slate-100 flex items-center justify-center hover:bg-slate-50 transition-colors outline-none">
+                                  <MoreVertical className="w-4 h-4 md:w-5 md:h-5 text-slate-400" />
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="rounded-2xl p-2 min-w-[160px] bg-white shadow-2xl border border-slate-100">
                                   <DropdownMenuItem 
@@ -2947,36 +2993,43 @@ export default function App() {
                           )}
                         </div>
                       </CardHeader>
-                      <CardContent className="p-8 pt-0 space-y-10">
+                      <CardContent className="p-5 md:p-8 pt-0 space-y-6 md:space-y-10">
                         {/* Children Section */}
-                        <div className="space-y-5">
-                          <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-primary" /> Flechas
+                        <div className="space-y-3 md:space-y-5">
+                          <h4 className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.3em] text-slate-400 flex items-center gap-2 md:gap-3">
+                            <div className="w-1 h-1 md:w-1.5 md:h-1.5 rounded-full bg-primary" /> Flechas
                           </h4>
                           <div className="grid grid-cols-1 gap-4">
                             {group.children.map(child => {
                               const ageGroup = getAgeGroup(child.birthDate);
                               return (
-                                <div key={child.id} className="flex items-center justify-between p-5 bg-slate-50/50 rounded-2xl border border-slate-100 group/item hover:bg-white hover:shadow-xl hover:shadow-slate-200/50 transition-all">
-                                  <div className="flex items-center gap-4">
-                                    {child.photoUrl ? (
-                                      <img src={child.photoUrl} alt={child.name} className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-md" referrerPolicy="no-referrer" />
-                                    ) : (
-                                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center shadow-inner ${
-                                        child.status === 'Inativa' ? 'bg-slate-100 text-slate-400' : 'bg-primary/10 text-primary'
-                                      }`}>
-                                        <Baby className="w-6 h-6" />
-                                      </div>
-                                    )}
+                                <div key={child.id} className="flex items-center justify-between p-4 md:p-6 bg-white rounded-2xl md:rounded-[2rem] border border-slate-100 group/item hover:bg-slate-50 hover:border-primary/20 hover:shadow-xl hover:shadow-primary/5 transition-all duration-300">
+                                  <div className="flex items-center gap-3 md:gap-6">
+                                    <div className="relative">
+                                      {child.photoUrl ? (
+                                        <img src={child.photoUrl} alt={child.name} className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl object-cover border-2 border-white shadow-md" referrerPolicy="no-referrer" />
+                                      ) : (
+                                        <div className={`w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center shadow-inner ${
+                                          child.status === 'Inativa' ? 'bg-slate-100 text-slate-400' : 'bg-primary/10 text-primary'
+                                        }`}>
+                                          <Baby className="w-5 h-5 md:w-7 md:h-7" />
+                                        </div>
+                                      )}
+                                      {child.checkedIn && (
+                                        <div className="absolute -top-1 -right-1 w-4 h-4 md:w-5 md:h-5 bg-green-500 rounded-full border-2 border-white flex items-center justify-center text-white">
+                                          <CheckCircle2 className="w-2.5 h-2.5 md:w-3 md:h-3" />
+                                        </div>
+                                      )}
+                                    </div>
                                     <div>
-                                      <p className="font-black text-slate-900 text-lg tracking-tight">{child.name}</p>
-                                      <div className="flex items-center gap-2 mt-1">
-                                        <Badge variant="secondary" className="text-[9px] font-black uppercase tracking-widest bg-white text-slate-500 border-slate-100">
+                                      <p className="font-black text-slate-900 text-sm md:text-lg tracking-tight leading-tight">{child.name}</p>
+                                      <div className="flex items-center gap-1.5 md:gap-2 mt-1 md:mt-1.5">
+                                        <Badge variant="secondary" className="text-[8px] md:text-[9px] font-black uppercase tracking-widest bg-slate-100 text-slate-500 border-none px-1.5 md:px-2">
                                           {ageGroup.label} • {ageGroup.age} anos
                                         </Badge>
                                         {child.status && child.status !== 'Ativa' && (
-                                          <Badge className={`text-[9px] font-black uppercase tracking-widest ${
-                                            child.status === 'Inativa' ? 'bg-slate-100 text-slate-500' : 'bg-amber-100 text-amber-600'
+                                          <Badge className={`text-[8px] md:text-[9px] font-black uppercase tracking-widest border-none px-1.5 md:px-2 ${
+                                            child.status === 'Inativa' ? 'bg-red-50 text-red-500' : 'bg-amber-100 text-amber-600'
                                           }`}>
                                             {child.status}
                                           </Badge>
@@ -2984,22 +3037,23 @@ export default function App() {
                                       </div>
                                     </div>
                                   </div>
+                                  
                                   {isAdmin && (
-                                    <div className="flex gap-2">
+                                    <div className="flex gap-1 md:gap-2 md:opacity-0 md:group-hover/item:opacity-100 transition-opacity md:translate-x-4 md:group-hover/item:translate-x-0 transition-transform">
                                       <Button 
                                         size="icon" 
                                         variant="ghost" 
-                                        className={`h-10 w-10 rounded-xl border border-slate-100/50 ${child.status === 'Inativa' ? 'text-green-500 hover:bg-green-50' : 'text-amber-500 hover:bg-amber-50'}`} 
+                                        className={`h-9 w-9 md:h-11 md:w-11 rounded-xl md:rounded-2xl border-none ${child.status === 'Inativa' ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-amber-50 text-amber-600 hover:bg-amber-100'}`} 
                                         onClick={() => toggleChildStatus(child)}
                                         title={child.status === 'Inativa' ? "Ativar" : "Desativar"}
                                       >
-                                        {child.status === 'Inativa' ? <UserPlus className="w-5 h-5" /> : <UserMinus className="w-5 h-5" />}
+                                        {child.status === 'Inativa' ? <UserPlus className="w-4 h-4 md:w-5 md:h-5" /> : <UserMinus className="w-4 h-4 md:w-5 md:h-5" />}
                                       </Button>
-                                      <Button size="icon" variant="ghost" className="h-10 w-10 rounded-xl border border-slate-100/50 text-blue-500 hover:bg-blue-50" onClick={() => handleEditChild(child)}>
-                                        <Pencil className="w-5 h-5" />
+                                      <Button size="icon" variant="ghost" className="h-9 w-9 md:h-11 md:w-11 rounded-xl md:rounded-2xl bg-blue-50 text-blue-600 hover:bg-blue-100" onClick={() => handleEditChild(child)}>
+                                        <Pencil className="w-4 h-4 md:w-5 md:h-5" />
                                       </Button>
-                                      <Button size="icon" variant="ghost" className="h-10 w-10 rounded-xl border border-slate-100/50 text-red-500 hover:bg-red-50" onClick={() => handleDeleteChild(child)}>
-                                        <Trash2 className="w-5 h-5" />
+                                      <Button size="icon" variant="ghost" className="h-9 w-9 md:h-11 md:w-11 rounded-xl md:rounded-2xl bg-red-50 text-red-600 hover:bg-red-100" onClick={() => handleDeleteChild(child)}>
+                                        <Trash2 className="w-4 h-4 md:w-5 md:h-5" />
                                       </Button>
                                     </div>
                                   )}
@@ -3010,59 +3064,59 @@ export default function App() {
                         </div>
 
                         {/* Parents Section */}
-                        <div className="space-y-5">
-                          <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400 flex items-center gap-3">
-                            <div className="w-1.5 h-1.5 rounded-full bg-primary" /> Responsáveis
+                        <div className="space-y-3 md:space-y-5 pt-4 border-t border-slate-50">
+                          <h4 className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.3em] text-slate-400 flex items-center gap-2 md:gap-3">
+                            <div className="w-1 h-1 md:w-1.5 md:h-1.5 rounded-full bg-primary" /> Responsáveis
                           </h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-5">
                             {group.parents.map(parent => (
-                              <div key={parent.id} className="p-6 bg-white rounded-[2rem] border border-slate-100 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                              <div key={parent.id} className="p-4 md:p-6 bg-white rounded-2xl md:rounded-[2rem] border border-slate-100 shadow-sm space-y-3 md:space-y-4 hover:shadow-md transition-shadow">
                                 <div className="flex justify-between items-start">
-                                  <div className="flex gap-4">
+                                  <div className="flex gap-3 md:gap-4">
                                     {parent.photoUrl ? (
-                                      <img src={parent.photoUrl} alt={parent.name} className="w-12 h-12 rounded-xl object-cover border-2 border-white shadow-md" referrerPolicy="no-referrer" />
+                                      <img src={parent.photoUrl} alt={parent.name} className="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl object-cover border-2 border-white shadow-md" referrerPolicy="no-referrer" />
                                     ) : (
-                                      <div className="w-12 h-12 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shadow-inner">
-                                        <ShieldCheck className="w-6 h-6" />
+                                      <div className="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl bg-slate-50 flex items-center justify-center text-slate-400 shadow-inner">
+                                        <ShieldCheck className="w-5 h-5 md:w-6 md:h-6" />
                                       </div>
                                     )}
                                     <div>
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <p className="font-black text-slate-900 text-base leading-tight">{parent.name}</p>
+                                      <div className="flex items-center gap-1.5 md:gap-2 flex-wrap">
+                                        <p className="font-black text-slate-900 text-sm md:text-base leading-tight">{parent.name}</p>
                                         {parent.role && (
-                                          <span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg uppercase tracking-wider border border-slate-200">
+                                          <span className="text-[8px] md:text-[9px] font-black bg-slate-100 text-slate-500 px-1.5 md:px-2 py-0.5 rounded-lg uppercase tracking-wider border border-slate-200">
                                             {parent.role}
                                           </span>
                                         )}
                                       </div>
-                                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{parent.relation} • Líder: {parent.leader || '---'}</p>
+                                      <p className="text-[9px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest mt-1">{parent.relation} • Líder: {parent.leader || '---'}</p>
                                     </div>
                                   </div>
-                                  <div className="flex gap-2">
+                                  <div className="flex gap-1 md:gap-2">
                                     {group.children.some(c => c.status === 'Inativa') && (
                                       <Button 
                                         size="icon" 
                                         variant="ghost" 
-                                        className="h-10 w-10 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100"
+                                        className="h-8 w-8 md:h-10 md:w-10 rounded-full bg-amber-50 text-amber-600 hover:bg-amber-100"
                                         onClick={() => sendAbsenceMessage(group.children[0], parent)}
                                         title="Mensagem de Ausência"
                                       >
-                                        <MessageCircle className="w-5 h-5" />
+                                        <MessageCircle className="w-4 h-4 md:w-5 md:h-5" />
                                       </Button>
                                     )}
                                     <Button 
                                       size="icon" 
                                       variant="ghost" 
-                                      className="h-10 w-10 rounded-full bg-green-50 text-green-600 hover:bg-green-100"
+                                      className="h-8 w-8 md:h-10 md:w-10 rounded-full bg-green-50 text-green-600 hover:bg-green-100"
                                       onClick={() => contactParent(group.children[0], parent)}
                                       title="Contato Rápido"
                                     >
-                                      <MessageCircle className="w-5 h-5" />
+                                      <MessageCircle className="w-4 h-4 md:w-5 md:h-5" />
                                     </Button>
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-3 text-sm font-black text-slate-600 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
-                                  <Phone className="w-4 h-4 text-slate-400" />
+                                <div className="flex items-center gap-2 md:gap-3 text-[10px] md:text-sm font-black text-slate-600 bg-slate-50/50 p-2 md:p-3 rounded-xl border border-slate-100">
+                                  <Phone className="w-3 h-3 md:w-4 md:h-4 text-slate-400" />
                                   {parent.phone}
                                 </div>
                               </div>
@@ -3071,19 +3125,19 @@ export default function App() {
                         </div>
 
                         {(group.children.some(c => c.allergies || c.specialNeeds)) && (
-                          <div className="pt-8 border-t border-slate-50 space-y-4">
-                            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Observações de Saúde</h4>
-                            <div className="grid grid-cols-1 gap-3">
-                              {group.children.filter(c => c.allergies).map(c => (
-                                <div key={`alg-${c.id}`} className="flex items-start gap-3 text-xs bg-red-50/50 text-red-700 p-4 rounded-2xl border border-red-100 font-medium">
-                                  <AlertCircle className="w-5 h-5 shrink-0 text-red-500" />
-                                  <span><b className="font-black uppercase tracking-widest text-[10px] block mb-1">{c.name}</b> {c.allergies}</span>
+                          <div className="pt-4 md:pt-8 border-t border-slate-50 space-y-3 md:space-y-4">
+                            <h4 className="text-[9px] md:text-[10px] font-black uppercase tracking-[0.2em] md:tracking-[0.3em] text-slate-400">Observações</h4>
+                            <div className="grid grid-cols-1 gap-2 md:gap-3">
+                              {group.children.filter(c => c.allergies && c.allergies !== 'Nenhuma').map(c => (
+                                <div key={`alg-${c.id}`} className="flex items-start gap-2 md:gap-3 text-[11px] md:text-xs bg-red-50/50 text-red-700 p-3 md:p-4 rounded-xl md:rounded-2xl border border-red-100 font-medium">
+                                  <AlertCircle className="w-4 h-4 md:w-5 md:h-5 shrink-0 text-red-500" />
+                                  <span><b className="font-black uppercase tracking-widest text-[9px] block mb-0.5 md:mb-1">{c.name}</b> {c.allergies}</span>
                                 </div>
                               ))}
-                              {group.children.filter(c => c.specialNeeds).map(c => (
-                                <div key={`sn-${c.id}`} className="flex items-start gap-3 text-xs bg-amber-50/50 text-amber-700 p-4 rounded-2xl border border-amber-100 font-medium">
-                                  <Info className="w-5 h-5 shrink-0 text-amber-500" />
-                                  <span><b className="font-black uppercase tracking-widest text-[10px] block mb-1">{c.name}</b> {c.specialNeeds}</span>
+                              {group.children.filter(c => c.specialNeeds && c.specialNeeds !== 'Nenhuma').map(c => (
+                                <div key={`sn-${c.id}`} className="flex items-start gap-2 md:gap-3 text-[11px] md:text-xs bg-amber-50/50 text-amber-700 p-3 md:p-4 rounded-xl md:rounded-2xl border border-amber-100 font-medium">
+                                  <Info className="w-4 h-4 md:w-5 md:h-5 shrink-0 text-amber-500" />
+                                  <span><b className="font-black uppercase tracking-widest text-[9px] block mb-0.5 md:mb-1">{c.name}</b> {c.specialNeeds}</span>
                                 </div>
                               ))}
                             </div>
@@ -3161,60 +3215,76 @@ export default function App() {
                           const day = parseInt(parts[2], 10);
                           const isToday = day === new Date().getDate();
                           
-                          return (
-                            <motion.div 
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              key={child.id} 
-                              className={`flex flex-col md:flex-row items-start md:items-center justify-between p-6 rounded-[2rem] border transition-all duration-500 gap-6 ${
-                                isToday 
-                                ? 'bg-pink-50/50 border-pink-200 shadow-xl shadow-pink-200/20 ring-1 ring-pink-200' 
-                                : 'bg-white border-slate-50 hover:border-slate-200 hover:shadow-xl hover:shadow-slate-200/40'
-                              }`}
-                            >
-                              <div className="flex items-center gap-6">
-                                <div className={`w-16 h-16 rounded-2xl flex items-center justify-center relative shadow-inner ${
-                                  isToday ? 'bg-pink-200 text-pink-600' : 'bg-slate-50 text-slate-400'
-                                }`}>
-                                  <Baby className="w-8 h-8" />
-                                  {isToday && (
-                                    <span className="absolute -top-1 -right-1 flex h-4 w-4">
-                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                                      <span className="relative inline-flex rounded-full h-4 w-4 bg-pink-500"></span>
-                                    </span>
+                            return (
+                              <motion.div 
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                whileHover={{ scale: 1.01 }}
+                                key={child.id} 
+                                className={`group flex flex-col md:flex-row items-start md:items-center justify-between p-8 rounded-[2.5rem] border transition-all duration-500 gap-6 ${
+                                  isToday 
+                                  ? 'bg-gradient-to-br from-pink-50 to-rose-50 border-pink-200 shadow-xl shadow-pink-200/20 ring-2 ring-pink-200/50' 
+                                  : 'bg-white border-slate-100 hover:border-pink-200 hover:shadow-2xl hover:shadow-slate-200/40'
+                                }`}
+                              >
+                                <div className="flex items-center gap-6">
+                                  <div className={`w-20 h-20 rounded-[1.8rem] flex items-center justify-center relative shadow-inner transition-transform group-hover:scale-105 duration-500 ${
+                                    isToday ? 'bg-pink-200 text-pink-600' : 'bg-slate-50 text-slate-400 group-hover:bg-pink-50 group-hover:text-pink-400'
+                                  }`}>
+                                    <Baby className="w-10 h-10" />
+                                    {isToday && (
+                                      <span className="absolute -top-1 -right-1 flex h-6 w-6">
+                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                                        <span className="relative inline-flex rounded-full h-6 w-6 bg-pink-500 flex items-center justify-center">
+                                          <Cake className="w-3 h-3 text-white" />
+                                        </span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-4 flex-wrap">
+                                      <p className="font-black text-2xl text-slate-900 tracking-tight leading-tight">{child.name}</p>
+                                      {isToday && <Badge className="bg-pink-500 hover:bg-pink-600 font-black uppercase tracking-widest text-[9px] px-3 py-1.5 shadow-lg shadow-pink-500/20">HOJE! 🎂</Badge>}
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-3 flex-wrap">
+                                      <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
+                                        <Calendar className="w-3.5 h-3.5 text-pink-500" />
+                                        <span className="text-xs font-black text-slate-600 uppercase tracking-widest">
+                                          {day} de {format(new Date(child.birthDate), 'MMMM', { locale: ptBR })}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 rounded-xl border border-slate-100">
+                                        <Users className="w-3.5 h-3.5 text-slate-400" />
+                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                          {getAgeGroup(child.birthDate).label}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex gap-3 w-full md:w-auto">
+                                  {parent && (
+                                    <Button 
+                                      className={`flex-1 md:flex-initial h-14 px-8 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all shadow-lg ${
+                                        isToday ? 'bg-pink-600 hover:bg-pink-700 text-white shadow-pink-600/20' : 'bg-white border-2 border-slate-100 text-slate-600 hover:bg-slate-50'
+                                      }`}
+                                      onClick={() => sendBirthdayMessage(child, parent)}
+                                    >
+                                      <MessageCircle className="w-4 h-4 mr-2" />
+                                      Parabenizar
+                                    </Button>
                                   )}
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-3">
-                                    <p className="font-black text-xl text-slate-900 tracking-tight">{child.name}</p>
-                                    {isToday && <Badge className="bg-pink-500 hover:bg-pink-600 font-black uppercase tracking-widest text-[9px] px-3 py-1">HOJE! 🎂</Badge>}
-                                  </div>
-                                  <div className="flex items-center gap-3 mt-2">
-                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
-                                      <Calendar className="w-3 h-3" />
-                                      Dia {parseInt(child.birthDate.split('-')[2], 10)}
-                                    </div>
-                                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-400 bg-slate-50 px-3 py-1 rounded-full border border-slate-100">
-                                      <Clock className="w-3 h-3" />
-                                      {getAgeGroup(child.birthDate).label}
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="flex w-full md:w-auto gap-3 self-end md:self-center">
-                                {parent && (
                                   <Button 
-                                    className="flex-1 md:flex-none bg-green-600 hover:bg-green-700 rounded-2xl h-14 px-8 shadow-xl shadow-green-200 font-black uppercase tracking-widest text-[10px]"
-                                    onClick={() => sendBirthdayMessage(child, parent)}
+                                    variant="ghost" 
+                                    className="h-14 w-14 rounded-2xl bg-slate-50 text-slate-400 hover:bg-pink-50 hover:text-pink-500"
+                                    onClick={() => handleEditChild(child)}
                                   >
-                                    <MessageCircle className="w-5 h-5 mr-3" />
-                                    Enviar Parabéns
+                                    <Pencil className="w-4 h-4" />
                                   </Button>
-                                )}
-                              </div>
-                            </motion.div>
-                          );
-                        })}
+                                </div>
+                              </motion.div>
+                            );
+                          })}
                       {children.filter(child => {
                         const parts = child.birthDate.split('-');
                         if (parts.length !== 3) return false;
@@ -4109,61 +4179,86 @@ export default function App() {
                 </div>
 
                 {isAdmin && (
-                  <div className="pt-12 border-t border-slate-100">
-                    <div className="space-y-6">
+                  <div className="pt-8 md:pt-12 border-t border-slate-100">
+                    <div className="space-y-4 md:space-y-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <Label className="text-xs font-black uppercase tracking-[0.3em] text-slate-400 ml-1">Manutenção de Dados</Label>
-                          <p className="text-sm text-slate-500 font-medium mt-1">Ferramentas para gestão da base de dados</p>
+                          <Label className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.3em] text-slate-400 ml-1">Manutenção</Label>
+                          <p className="text-xs md:text-sm text-slate-500 font-medium mt-0.5">Gestão da base de dados</p>
                         </div>
-                        <Database className="w-6 h-6 text-slate-200" />
+                        <Database className="w-5 h-5 md:w-6 md:h-6 text-slate-200" />
                       </div>
                       
-                      <div className="p-10 bg-amber-50/50 rounded-[3rem] border border-amber-100 flex flex-col md:flex-row items-center justify-between gap-8">
-                        <div className="flex items-center gap-6">
-                          <div className="w-16 h-16 bg-amber-100 rounded-[1.5rem] flex items-center justify-center text-amber-600 shadow-inner">
-                            <Download className="w-8 h-8" />
+                      <div className="p-6 md:p-10 bg-amber-50/50 rounded-2xl md:rounded-[3rem] border border-amber-100 flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8">
+                        <div className="flex items-center gap-4 md:gap-6">
+                          <div className="w-12 h-12 md:w-16 md:h-16 bg-amber-100 rounded-xl md:rounded-[1.5rem] flex items-center justify-center text-amber-600 shadow-inner">
+                            <Download className="w-6 h-6 md:w-8 md:h-8" />
                           </div>
                           <div>
-                            <h4 className="text-xl font-black text-slate-900 tracking-tight">Importar Dados do Ministério</h4>
-                            <p className="text-slate-500 font-medium">Carregar a lista de flechas e responsáveis fornecida</p>
+                            <h4 className="text-lg md:text-xl font-black text-slate-900 tracking-tight">Importar Dados</h4>
+                            <p className="text-[11px] md:text-sm text-slate-500 font-medium mt-0.5">Carregar lista pré-formatada</p>
                           </div>
                         </div>
                         <Button 
                           onClick={handleImportSeedData}
                           disabled={isImporting}
-                          className="w-full md:w-auto h-14 rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-xs shadow-xl shadow-amber-500/20 px-10"
+                          className="w-full md:w-auto h-12 md:h-14 rounded-xl md:rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[10px] md:text-xs shadow-xl shadow-amber-500/20 px-8 md:px-10"
                         >
-                          {isImporting ? 'Importando...' : 'Iniciar Importação'}
+                          {isImporting ? 'Importando...' : 'Iniciar'}
                         </Button>
                       </div>
 
-                      <div className="p-10 bg-blue-50/50 rounded-[3rem] border border-blue-100 flex flex-col gap-6">
-                        <div className="flex items-center gap-6">
-                          <div className="w-16 h-16 bg-blue-100 rounded-[1.5rem] flex items-center justify-center text-blue-600 shadow-inner">
-                            <Wand2 className="w-8 h-8" />
-                          </div>
-                          <div className="flex-1">
-                            <h4 className="text-xl font-black text-slate-900 tracking-tight">Lançamento Inteligente (IA)</h4>
-                            <p className="text-slate-500 font-medium">Cole as informações (listas, conversas ou lembretes) e a IA fará os cadastros automaticamente.</p>
-                          </div>
-                        </div>
+                      <div className="relative group p-6 md:p-12 bg-gradient-to-br from-blue-600/5 to-indigo-600/5 rounded-2xl md:rounded-[3rem] border border-blue-100/50 shadow-xl shadow-blue-500/5 overflow-hidden">
+                        <div className="absolute top-0 right-0 w-64 h-64 bg-blue-500/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
                         
-                        <div className="space-y-4">
-                          <textarea
-                            value={launchTextInput}
-                            onChange={(e) => setLaunchTextInput(e.target.value)}
-                            placeholder="Ex: Maria Alice, nasc 10/05/2018. Mãe: Tatiana, fone 24 99999-9999. Sem alergias."
-                            className="w-full h-40 rounded-2xl border-none bg-white shadow-inner p-6 font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 transition-all resize-none"
-                          />
-                          <Button 
-                            onClick={handleSmartLaunch}
-                            disabled={isImporting || !launchTextInput.trim()}
-                            className="w-full h-14 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-xs shadow-xl shadow-blue-500/20 px-10"
-                          >
-                            {isImporting ? <Sparkles className="w-4 h-4 animate-pulse mr-2" /> : <Send className="w-4 h-4 mr-2" />}
-                            {isImporting ? 'Processando Lançamento...' : 'Processar e Cadastrar'}
-                          </Button>
+                        <div className="relative flex flex-col lg:flex-row gap-6 md:gap-10">
+                          <div className="flex-1 space-y-4 md:space-y-6">
+                            <div className="flex items-center gap-4 md:gap-5">
+                              <div className="w-12 h-12 md:w-14 md:h-14 bg-blue-600 rounded-xl md:rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-500/30 rotate-3 group-hover:rotate-0 transition-transform duration-500">
+                                <Sparkles className="w-6 h-6 md:w-7 md:h-7" />
+                              </div>
+                              <div>
+                                <h4 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Lançamento Smart</h4>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="flex h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                                  <p className="text-blue-600 font-bold text-[9px] md:text-xs uppercase tracking-widest">Powered by AI</p>
+                                </div>
+                              </div>
+                            </div>
+                            <p className="text-xs md:text-sm text-slate-500 font-medium leading-relaxed">
+                              Cole listas do WhatsApp. Nossa IA identifica crianças e responsáveis automaticamente.
+                            </p>
+                          </div>
+                          
+                          <div className="flex-[1.2] flex flex-col gap-3 md:gap-4">
+                            <div className="relative">
+                              <textarea
+                                value={launchTextInput}
+                                onChange={(e) => setLaunchTextInput(e.target.value)}
+                                placeholder="Cole as informações aqui..."
+                                className="w-full h-40 md:h-56 rounded-xl md:rounded-[2rem] border-2 border-transparent bg-white shadow-xl shadow-blue-900/5 p-4 md:p-8 font-medium text-slate-700 placeholder:text-slate-300 focus:border-blue-500/30 focus:ring-0 transition-all resize-none text-sm md:text-base leading-relaxed"
+                              />
+                            </div>
+                            <Button 
+                              onClick={handleSmartLaunch}
+                              disabled={isImporting || !launchTextInput.trim()}
+                              className="w-full h-12 md:h-16 rounded-xl md:rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[10px] md:text-sm shadow-2xl shadow-blue-500/40 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 md:gap-3"
+                            >
+                              {isImporting ? (
+                                <>
+                                  <div className="flex gap-1">
+                                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" />
+                                  </div>
+                                  <span>Analisando...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Wand2 className="w-4 h-4 md:w-5 md:h-5" />
+                                  <span>Processar</span>
+                                </>
+                              )}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
