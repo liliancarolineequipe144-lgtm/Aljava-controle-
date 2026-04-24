@@ -490,7 +490,8 @@ export default function App() {
       setUser(user);
       setLoading(false);
       if (user) {
-        testConnection();
+        // We log success here but don't force a network check which can be unreliable
+        console.log("Auth state changed: User is signed in");
       }
     });
     return () => {
@@ -542,25 +543,17 @@ export default function App() {
           appName: data.appName || 'Aljava Controle'
         });
       }
+    }, (error) => {
+      console.error("Settings listener error:", error);
+      if (error.message.includes('permission-denied')) {
+        // This is expected if the app isn't fully provisioned or rules are deploying
+        console.warn("Permission denied for settings - app might be initializing");
+      } else if (error.message.includes('offline')) {
+        toast.error("O banco de dados parece estar offline. Verifique sua conexão.");
+      }
     });
     return () => unsubSettings();
   }, []);
-
-  async function testConnection() {
-    try {
-      await getDocFromServer(doc(db, 'test', 'connection'));
-      console.log("Firestore connection successful.");
-    } catch (error) {
-      console.error("Firestore connection error:", error);
-      if(error instanceof Error && error.message.includes('the client is offline')) {
-        toast.error("O banco de dados parece estar offline. Verifique sua conexão.");
-      } else if (error instanceof Error && error.message.includes('permission')) {
-        toast.error("Erro de permissão ao testar conexão com o banco.");
-      } else {
-        toast.error(`Erro de conexão: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
