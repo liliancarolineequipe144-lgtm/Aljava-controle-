@@ -19,12 +19,13 @@ service cloud.firestore {
       return isSignedIn() && (
         request.auth.token.firebase.sign_in_provider == 'anonymous' ||
         (request.auth.token.get('email', '') != null && request.auth.token.get('email', '').lower() == 'convitebrancadeneve@gmail.com') ||
-        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.uid == "p00KCXIkOZM2GGUSrtTmS53XxxK2"
       );
     }
 
     function isValidId(id) {
-      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() <= 128;
     }
 
     function incoming() {
@@ -38,19 +39,17 @@ service cloud.firestore {
     // --- Validation Blueprints ---
 
     function isValidChild(data) {
-      return data.keys().hasAll(['name', 'birthDate']) &&
-             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-             data.birthDate is string && data.birthDate.size() >= 10 && data.birthDate.size() <= 20 &&
-             (data.get('status', 'Ativa') in ['Ativa', 'Inativa', 'Visitante']) &&
-             (!('checkedIn' in data) || data.checkedIn is bool) &&
-             (!('parentIds' in data) || data.parentIds is list);
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() >= 1 &&
+             (!('birthDate' in data) || data.birthDate is string) &&
+             (!('status' in data) || data.status is string);
     }
 
     function isValidParent(data) {
-      return data.keys().hasAll(['name', 'phone', 'leader']) &&
-             data.name is string && data.name.size() >= 2 && data.name.size() <= 100 &&
-             data.phone is string && data.phone.size() >= 8 && data.phone.size() <= 20 &&
-             data.leader is string;
+      return data.keys().hasAll(['name']) &&
+             data.name is string && data.name.size() >= 1 &&
+             (!('phone' in data) || data.phone is string) &&
+             (!('leader' in data) || data.leader is string);
     }
 
     function isValidMaterial(data) {

@@ -189,12 +189,13 @@ export default function App() {
   const [isImporting, setIsImporting] = useState(false);
   const [launchTextInput, setLaunchTextInput] = useState('');
 
-  const handleImportSeedData = async () => {
+  const handleImportData = async (dataToImport: any[]) => {
     if (!isAdmin) return;
     setIsImporting(true);
-    const t = toast.loading('Importando dados do ministério...');
+    const t = toast.loading('Importando dados...');
     
     const normalizePhone = (phone: string) => {
+      if (!phone) return '';
       let cleaned = phone.replace(/\D/g, '');
       if (cleaned.startsWith('55') && cleaned.length >= 12) {
         cleaned = cleaned.substring(2);
@@ -206,8 +207,8 @@ export default function App() {
       // Map to keep track of created families by parent phone
       const phoneToFamilyId: { [phone: string]: { familyId: string, parentIds: string[] } } = {};
 
-      for (const item of seedData) {
-        const primaryPhone = item.parents[0]?.phone;
+      for (const item of dataToImport) {
+        const primaryPhone = item.parents && item.parents[0]?.phone;
         const normPrimaryPhone = primaryPhone ? normalizePhone(primaryPhone) : '';
         let familyId = '';
         let parentIds: string[] = [];
@@ -219,17 +220,20 @@ export default function App() {
           // Create new family
           familyId = `family_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           
-          for (const p of item.parents) {
-            const parentRef = doc(collection(db, 'parents'));
-            await setDoc(parentRef, {
-              ...p,
-              familyId,
-              id: parentRef.id
-            });
-            parentIds.push(parentRef.id);
+          if (item.parents && Array.isArray(item.parents)) {
+            for (const p of item.parents) {
+              const parentRef = doc(collection(db, 'parents'));
+              const parentData = {
+                ...p,
+                familyId,
+                id: parentRef.id
+              };
+              await setDoc(parentRef, parentData);
+              parentIds.push(parentRef.id);
+            }
           }
 
-          if (normPrimaryPhone) {
+          if (normPrimaryPhone && parentIds.length > 0) {
             phoneToFamilyId[normPrimaryPhone] = { familyId, parentIds };
           }
         }
@@ -237,27 +241,153 @@ export default function App() {
         // Add child
         const childRef = doc(collection(db, 'children'));
         await setDoc(childRef, {
-          name: item.name,
-          birthDate: item.birthDate,
-          status: item.status,
-          allergies: item.allergies,
-          specialNeeds: item.specialNeeds,
-          familyId,
-          parentIds,
-          parentId: parentIds[0], // Primary parent
+          name: item.name || 'Sem Nome',
+          birthDate: item.birthDate || '',
+          status: item.status || 'Ativa',
+          allergies: item.allergies || 'Nenhuma',
+          specialNeeds: item.specialNeeds || 'Nenhuma',
+          familyId: familyId || '',
+          parentIds: parentIds || [],
+          parentId: parentIds[0] || '', // Primary parent
           id: childRef.id,
           checkedIn: false,
           createdAt: new Date().toISOString()
         });
       }
-      toast.success('Dados importados com sucesso!', { id: t });
+
+      toast.success(`${dataToImport.length} registros importados com sucesso!`, { id: t });
     } catch (error) {
-      console.error('Erro na importação:', error);
-      toast.error('Erro ao importar dados.', { id: t });
-      handleFirestoreError(error, OperationType.CREATE, 'seed_import');
+      setIsImporting(false);
+      handleFirestoreError(error, OperationType.CREATE, 'multiple_import');
     } finally {
       setIsImporting(false);
     }
+  };
+
+  const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const t = toast.loading('Processando todas as abas da planilha...');
+
+    const reader = new FileReader();
+    reader.onerror = () => {
+      setIsImporting(false);
+      toast.error('Erro ao ler o arquivo.', { id: t });
+    };
+
+    reader.onload = (event) => {
+      try {
+        const bstr = event.target?.result;
+        const workbook = XLSX.read(bstr, { type: 'binary' });
+        const allFormattedData: any[] = [];
+
+        const normalizeKey = (key: string) => 
+          String(key || '').toLowerCase()
+               .trim()
+               .normalize("NFD")
+               .replace(/[\u0300-\u036f]/g, "") // Remove acentos
+               .replace(/[^a-z0-9]/g, ""); // Apenas letras e números
+
+        // Process each sheet (tab) in the workbook
+        workbook.SheetNames.forEach((sheetName) => {
+          const worksheet = workbook.Sheets[sheetName];
+          const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+          let currentFamilyParents: any[] = [];
+          
+          // Find header row for this specific sheet
+          const headerRowIndex = rows.findIndex(r => r.some(c => {
+            const norm = normalizeKey(String(c));
+            return norm === 'nome' || norm === 'tipo' || norm.includes('filiacao');
+          }));
+
+          if (headerRowIndex === -1) {
+            console.warn(`Could not find header in sheet: ${sheetName}`);
+            return;
+          }
+
+          const headerRow = rows[headerRowIndex];
+          const colIdx = {
+            nome: headerRow.findIndex(c => normalizeKey(String(c)).includes('nome')),
+            tipo: headerRow.findIndex(c => normalizeKey(String(c)).includes('tipo')),
+            nasc: headerRow.findIndex(c => normalizeKey(String(c)).includes('nasc')),
+            tel: headerRow.findIndex(c => normalizeKey(String(c)).includes('tel')),
+            email: headerRow.findIndex(c => normalizeKey(String(c)).includes('mail'))
+          };
+
+          // Process data rows for this sheet
+          for (let i = headerRowIndex + 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || row.length === 0) continue;
+
+            const cellA = String(row[colIdx.nome] || '').trim();
+            const normalizedCellA = normalizeKey(cellA);
+            const tipo = normalizeKey(String(row[colIdx.tipo] || ''));
+            
+            // Detect New Family Row (e.g., "Família: Barbosa")
+            if (normalizedCellA.includes('familia')) {
+              currentFamilyParents = []; // Reset parents for new family
+              continue;
+            }
+
+            const name = cellA;
+            if (!name || name === 'null' || normalizedCellA === 'nome') continue;
+
+            // Birth date parsing
+            let bDate = row[colIdx.nasc];
+            if (bDate) {
+              try {
+                if (!isNaN(Number(bDate)) && Number(bDate) > 30000) {
+                  const date = XLSX.SSF.parse_date_code(Number(bDate));
+                  bDate = `${date.y}-${String(date.m).padStart(2, '0')}-${String(date.d).padStart(2, '0')}`;
+                } else {
+                  const parsedDate = new Date(bDate);
+                  if (!isNaN(parsedDate.getTime())) {
+                    bDate = format(parsedDate, 'yyyy-MM-dd');
+                  }
+                }
+              } catch (err) { bDate = ''; }
+            } else { bDate = ''; }
+
+            const phone = String(row[colIdx.tel] || '').trim();
+
+            if (tipo.includes('responsavel')) {
+              currentFamilyParents.push({
+                name,
+                phone,
+                relation: 'Responsável',
+                leader: '-'
+              });
+            } else if (tipo.includes('crianca')) {
+              allFormattedData.push({
+                name,
+                birthDate: bDate,
+                status: 'Ativa',
+                allergies: 'Nenhuma',
+                specialNeeds: 'Nenhuma',
+                parents: [...currentFamilyParents] 
+              });
+            }
+          }
+        });
+
+        if (allFormattedData.length > 0) {
+          toast.dismiss(t);
+          handleImportData(allFormattedData);
+        } else {
+          setIsImporting(false);
+          toast.error('Nenhum registro de criança encontrado em nenhuma das abas.', { id: t });
+        }
+      } catch (error) {
+        setIsImporting(false);
+        console.error('File parsing error:', error);
+        toast.error('Erro técnico ao processar planilha.', { id: t });
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = '';
   };
 
   const handleSmartLaunch = async () => {
@@ -4176,8 +4306,8 @@ export default function App() {
                     <div className="space-y-4 md:space-y-6">
                       <div className="flex items-center justify-between">
                         <div>
-                          <Label className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.3em] text-slate-400 ml-1">Manutenção</Label>
-                          <p className="text-xs md:text-sm text-slate-500 font-medium mt-0.5">Gestão da base de dados</p>
+                          <Label className="text-[10px] md:text-xs font-black uppercase tracking-[0.2em] md:tracking-[0.3em] text-slate-400 ml-1">Manutenção de Dados</Label>
+                          <p className="text-xs md:text-sm text-slate-500 font-medium mt-0.5">Gestão e importação da base de dados</p>
                         </div>
                         <Database className="w-5 h-5 md:w-6 md:h-6 text-slate-200" />
                       </div>
@@ -4188,17 +4318,38 @@ export default function App() {
                             <Download className="w-6 h-6 md:w-8 md:h-8" />
                           </div>
                           <div>
-                            <h4 className="text-lg md:text-xl font-black text-slate-900 tracking-tight">Importar Dados</h4>
-                            <p className="text-[11px] md:text-sm text-slate-500 font-medium mt-0.5">Carregar lista pré-formatada</p>
+                            <h4 className="text-lg md:text-xl font-black text-slate-900 tracking-tight">Importar do Excel</h4>
+                            <p className="text-[11px] md:text-sm text-slate-500 font-medium mt-0.5">Carregar planilha oficial do ministério</p>
                           </div>
                         </div>
-                        <Button 
-                          onClick={handleImportSeedData}
-                          disabled={isImporting}
-                          className="w-full md:w-auto h-12 md:h-14 rounded-xl md:rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[10px] md:text-xs shadow-xl shadow-amber-500/20 px-8 md:px-10"
-                        >
-                          {isImporting ? 'Importando...' : 'Iniciar'}
-                        </Button>
+                        <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+                          <input 
+                            type="file" 
+                            id="import-excel" 
+                            className="hidden" 
+                            accept=".xlsx, .xls, .csv" 
+                            onChange={handleExcelUpload} 
+                          />
+                          <Button 
+                            variant="outline"
+                            onClick={() => {
+                              const link = document.createElement('a');
+                              link.href = 'https://docs.google.com/spreadsheets/d/1UvV7YJm7XF-G-oUX_iM-4J7KxO0P_e8I/export?format=xlsx';
+                              link.download = 'modelo_importacao_aljava.xlsx';
+                              link.click();
+                            }}
+                            className="h-12 md:h-14 rounded-xl md:rounded-2xl border-amber-200 text-amber-700 hover:bg-amber-100 font-bold px-6"
+                          >
+                            Modelo
+                          </Button>
+                          <Button 
+                            onClick={() => document.getElementById('import-excel')?.click()}
+                            disabled={isImporting}
+                            className="flex-1 h-12 md:h-14 rounded-xl md:rounded-2xl bg-amber-500 hover:bg-amber-600 text-white font-black uppercase tracking-widest text-[10px] md:text-xs shadow-xl shadow-amber-500/20 px-8 md:px-10"
+                          >
+                            {isImporting ? 'Importando...' : 'Fazer Upload'}
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="relative group p-6 md:p-12 bg-gradient-to-br from-blue-600/5 to-indigo-600/5 rounded-2xl md:rounded-[3rem] border border-blue-100/50 shadow-xl shadow-blue-500/5 overflow-hidden">
