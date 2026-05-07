@@ -16,6 +16,7 @@ import {
   where, 
   orderBy,
   Timestamp,
+  getDocs,
   getDocFromServer
 } from 'firebase/firestore';
 import { 
@@ -76,7 +77,8 @@ import {
   CheckCircle2,
   MoreVertical,
   HeartPulse,
-  Activity
+  Activity,
+  RefreshCw
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import { motion, AnimatePresence } from 'motion/react';
@@ -192,36 +194,81 @@ export default function App() {
   const handleImportData = async (dataToImport: any[]) => {
     if (!isAdmin) return;
     setIsImporting(true);
-    const t = toast.loading('Importando dados...');
+    const t = toast.loading('Importando e organizando dados...');
+
+    const strictNormalize = (text: string) => 
+      String(text || '')
+        .toLowerCase()
+        .trim()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "");
     
     const normalizePhone = (phone: string) => {
       if (!phone) return '';
       let cleaned = phone.replace(/\D/g, '');
-      if (cleaned.startsWith('55') && cleaned.length >= 12) {
-        cleaned = cleaned.substring(2);
+      if (cleaned.startsWith('55')) {
+        cleaned = cleaned.substring(cleaned.length > 11 ? cleaned.length - 11 : 2);
       }
       return cleaned;
     };
 
     try {
-      // Map to keep track of created families by parent phone
-      const phoneToFamilyId: { [phone: string]: { familyId: string, parentIds: string[] } } = {};
+      // Group items by their tempFamilyId to process family by family
+      const families: { [key: string]: any[] } = {};
+      dataToImport.forEach(item => {
+        const fKey = item.tempFamilyId || 'default';
+        if (!families[fKey]) families[fKey] = [];
+        families[fKey].push(item);
+      });
 
-      for (const item of dataToImport) {
-        const primaryPhone = item.parents && item.parents[0]?.phone;
-        const normPrimaryPhone = primaryPhone ? normalizePhone(primaryPhone) : '';
+      let importCount = 0;
+      const existingChildrenMap = new Map<string, string>(); // name_birthDate -> id
+
+      // Get existing children to avoid duplicates
+      const childrenSnap = await getDocs(collection(db, 'children'));
+      childrenSnap.forEach(doc => {
+        const d = doc.data();
+        const key = `${strictNormalize(d.name)}_${d.birthDate}`;
+        existingChildrenMap.set(key, doc.id);
+      });
+
+      for (const fKey in families) {
+        const familyItems = families[fKey];
+        if (familyItems.length === 0) continue;
+
+        // Determine familyId and parents for this group
         let familyId = '';
         let parentIds: string[] = [];
-
-        if (normPrimaryPhone && phoneToFamilyId[normPrimaryPhone]) {
-          familyId = phoneToFamilyId[normPrimaryPhone].familyId;
-          parentIds = phoneToFamilyId[normPrimaryPhone].parentIds;
-        } else {
-          // Create new family
-          familyId = `family_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-          
-          if (item.parents && Array.isArray(item.parents)) {
+        
+        // Try to find if any parent in this group already exists in DB
+        for (const item of familyItems) {
+          if (item.parents) {
             for (const p of item.parents) {
+              const normPhone = normalizePhone(p.phone);
+              if (normPhone) {
+                const q = query(collection(db, 'parents'), where('phone', '==', p.phone));
+                const pSnap = await getDocs(q);
+                if (!pSnap.empty) {
+                  const existingP = pSnap.docs[0].data();
+                  familyId = existingP.familyId;
+                  // Get all parents for this family
+                  const allParentsSnap = await getDocs(query(collection(db, 'parents'), where('familyId', '==', familyId)));
+                  parentIds = allParentsSnap.docs.map(d => d.id);
+                  break;
+                }
+              }
+            }
+          }
+          if (familyId) break;
+        }
+
+        // If no existing family found, create one
+        if (!familyId) {
+          familyId = `family_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const firstItem = familyItems[0];
+          if (firstItem.parents && Array.isArray(firstItem.parents)) {
+            for (const p of firstItem.parents) {
               const parentRef = doc(collection(db, 'parents'));
               const parentData = {
                 ...p,
@@ -232,33 +279,135 @@ export default function App() {
               parentIds.push(parentRef.id);
             }
           }
-
-          if (normPrimaryPhone && parentIds.length > 0) {
-            phoneToFamilyId[normPrimaryPhone] = { familyId, parentIds };
-          }
         }
-        
-        // Add child
-        const childRef = doc(collection(db, 'children'));
-        await setDoc(childRef, {
-          name: item.name || 'Sem Nome',
-          birthDate: item.birthDate || '',
-          status: item.status || 'Ativa',
-          allergies: item.allergies || 'Nenhuma',
-          specialNeeds: item.specialNeeds || 'Nenhuma',
-          familyId: familyId || '',
-          parentIds: parentIds || [],
-          parentId: parentIds[0] || '', // Primary parent
-          id: childRef.id,
-          checkedIn: false,
-          createdAt: new Date().toISOString()
-        });
+
+        // Process children in this family group
+        for (const item of familyItems) {
+          const childKey = `${strictNormalize(item.name)}_${item.birthDate}`;
+          if (existingChildrenMap.has(childKey)) {
+            // Se a criança já existe, podemos querer atualizar os responsáveis
+            const existingChildId = existingChildrenMap.get(childKey)!;
+            const childRef = doc(db, 'children', existingChildId);
+            
+            // Buscar responsáveis atuais para não duplicar IDs de pais
+            const childDoc = await getDocFromServer(childRef);
+            const currentData = childDoc.data();
+            const currentParentIds = currentData?.parentIds || [];
+            
+            const newParentIds = [...new Set([...currentParentIds, ...parentIds])];
+            
+            await updateDoc(childRef, {
+              familyId: familyId || currentData?.familyId,
+              parentIds: newParentIds,
+              parentId: newParentIds[0] || parentIds[0] || currentData?.parentId
+            });
+            continue;
+          }
+
+          const childRef = doc(collection(db, 'children'));
+          await setDoc(childRef, {
+            name: item.name || 'Sem Nome',
+            birthDate: item.birthDate || '',
+            status: item.status || 'Ativa',
+            allergies: item.allergies || 'Nenhuma',
+            specialNeeds: item.specialNeeds || 'Nenhuma',
+            familyId: familyId || '',
+            parentIds: parentIds || [],
+            parentId: parentIds[0] || '', 
+            id: childRef.id,
+            checkedIn: false,
+            createdAt: new Date().toISOString()
+          });
+          existingChildrenMap.set(childKey, childRef.id);
+          importCount++;
+        }
       }
 
-      toast.success(`${dataToImport.length} registros importados com sucesso!`, { id: t });
+      toast.success(`${importCount} novos registros organizados e importados!`, { id: t });
     } catch (error) {
       setIsImporting(false);
       handleFirestoreError(error, OperationType.CREATE, 'multiple_import');
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleCleanupData = async () => {
+    if (!isAdmin) return;
+    setIsImporting(true);
+    const t = toast.loading('Analisando e organizando dados existentes...');
+    
+    const strictNormalize = (text: string) => 
+      String(text || '')
+        .toLowerCase()
+        .trim()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "");
+
+    try {
+      const childrenSnap = await getDocs(collection(db, 'children'));
+      const parentsSnap = await getDocs(collection(db, 'parents'));
+      
+      const children = childrenSnap.docs.map(doc => ({ ...doc.data(), id: doc.id } as Child));
+      
+      // Group children by normalized name + birthdate
+      const groups: { [key: string]: Child[] } = {};
+      children.forEach(child => {
+        const key = `${strictNormalize(child.name)}_${child.birthDate}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(child);
+      });
+      
+      let mergedCount = 0;
+      
+      for (const key in groups) {
+        const group = groups[key];
+        if (group.length > 1) {
+          // Found duplicates
+          const master = group[0];
+          const duplicates = group.slice(1);
+          
+          let allParentIds = [...(master.parentIds || [])];
+          if (master.parentId && !allParentIds.includes(master.parentId)) {
+            allParentIds.push(master.parentId);
+          }
+          
+          const masterFamilyId = master.familyId;
+          
+          for (const duplicate of duplicates) {
+            // Collect parent IDs from duplicate
+            const dupParentIds = duplicate.parentIds || [];
+            if (duplicate.parentId && !dupParentIds.includes(duplicate.parentId)) {
+              dupParentIds.push(duplicate.parentId);
+            }
+            
+            for (const pId of dupParentIds) {
+              if (!allParentIds.includes(pId)) {
+                allParentIds.push(pId);
+                // Update parent family to match master
+                const parentRef = doc(db, 'parents', pId);
+                await updateDoc(parentRef, { familyId: masterFamilyId });
+              }
+            }
+            
+            // Delete duplicate child
+            await deleteDoc(doc(db, 'children', duplicate.id));
+            mergedCount++;
+          }
+          
+          // Update master child with merged parents
+          await updateDoc(doc(db, 'children', master.id), {
+            parentIds: allParentIds,
+            parentId: allParentIds[0] || master.parentId
+          });
+        }
+      }
+      
+      toast.success(`${mergedCount} registros duplicados foram organizados e mesclados!`, { id: t });
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      toast.error('Erro ao organizar dados.', { id: t });
     } finally {
       setIsImporting(false);
     }
@@ -296,9 +445,10 @@ export default function App() {
           const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
           let currentFamilyParents: any[] = [];
+          let currentTempFamilyId = '';
           
           // Find header row for this specific sheet
-          const headerRowIndex = rows.findIndex(r => r.some(c => {
+          const headerRowIndex = rows.findIndex(r => r && Array.isArray(r) && r.some(c => {
             const norm = normalizeKey(String(c));
             return norm === 'nome' || norm === 'tipo' || norm.includes('filiacao');
           }));
@@ -329,6 +479,7 @@ export default function App() {
             // Detect New Family Row (e.g., "Família: Barbosa")
             if (normalizedCellA.includes('familia')) {
               currentFamilyParents = []; // Reset parents for new family
+              currentTempFamilyId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
               continue;
             }
 
@@ -361,13 +512,19 @@ export default function App() {
                 leader: '-'
               });
             } else if (tipo.includes('crianca')) {
+              // Ensure we have a temp family ID even if header was missing "Família:" prefix
+              if (!currentTempFamilyId) {
+                currentTempFamilyId = `temp_auto_${Date.now()}`;
+              }
+
               allFormattedData.push({
                 name,
                 birthDate: bDate,
                 status: 'Ativa',
                 allergies: 'Nenhuma',
                 specialNeeds: 'Nenhuma',
-                parents: [...currentFamilyParents] 
+                parents: [...currentFamilyParents],
+                tempFamilyId: currentTempFamilyId
               });
             }
           }
@@ -4330,6 +4487,15 @@ export default function App() {
                             accept=".xlsx, .xls, .csv" 
                             onChange={handleExcelUpload} 
                           />
+                          <Button 
+                            variant="outline"
+                            onClick={handleCleanupData}
+                            disabled={isImporting}
+                            className="h-12 md:h-14 rounded-xl md:rounded-2xl border-2 border-amber-200 text-amber-600 font-bold uppercase tracking-widest text-[10px] md:text-xs hover:bg-amber-50"
+                          >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Organizar Base
+                          </Button>
                           <Button 
                             variant="outline"
                             onClick={() => {
